@@ -24,6 +24,7 @@
     firebase.initializeApp(firebaseConfig);
     window._fbDB = firebase.database();
     window._sessionId = Math.random().toString(36).slice(2);
+    window._fbSyncComplete = false; // Block Firebase writes until initial sync is done
   </script>
   <style>
     body { font-family: 'Segoe UI', Arial, sans-serif; }
@@ -53,7 +54,7 @@ const S = {
   set: (k, v) => {
     localStorage.setItem(k, JSON.stringify(v));
     try {
-      if (window._fbDB) {
+      if (window._fbDB && window._fbSyncComplete) {
         window._fbDB.ref('sms/' + k).set(v);
         window._fbDB.ref('sms_meta/lastUpdate').set({ time: Date.now(), writer: window._sessionId });
       }
@@ -6192,6 +6193,7 @@ function App() {
     const snap = await window._fbDB.ref('sms').once('value');
     const data = snap.val();
     if (data) Object.keys(data).forEach(k => localStorage.setItem(k, JSON.stringify(data[k])));
+    window._fbSyncComplete = true; // Allow Firebase writes now that sync is done
 
     // Listen for real-time changes from other devices
     // Skip first callback (it fires immediately with current value)
@@ -6206,6 +6208,7 @@ function App() {
     });
   } catch(e) {
     console.warn('Firebase sync failed, using local data:', e);
+    window._fbSyncComplete = true; // Still allow writes even if sync failed
   }
   // Remove loading screen and render app
   const loading = document.getElementById('fb-loading');
