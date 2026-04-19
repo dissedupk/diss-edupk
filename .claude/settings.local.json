@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python create_invoice.py)",
+      "Bash(python3 \"C:\\\\Users\\\\Tajmmul\\\\OneDrive\\\\Documents\\\\claude ai\\\\tataheer traders\\\\create_invoice.py\")",
+      "Bash(py \"C:\\\\Users\\\\Tajmmul\\\\OneDrive\\\\Documents\\\\claude ai\\\\tataheer traders\\\\create_invoice.py\")",
+      "Bash(where python:*)",
+      "Bash(where python3:*)",
+      "Read(//usr/**)",
+      "Bash(ls /c/Python*)",
+      "Read(//c/Users/Tajmmul/AppData/Local/Programs/**)",
+      "Bash(start \"\" \"C:\\\\Users\\\\Tajmmul\\\\OneDrive\\\\Documents\\\\claude ai\\\\tataheer traders\\\\Invoice_I2C_Pakistan.xlsx\")",
+      "Bash(rm \"C:\\\\Users\\\\Tajmmul\\\\OneDrive\\\\Documents\\\\claude ai\\\\tataheer traders\\\\create_invoice.ps1\")",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(where node:*)",
+      "Bash(ls \"C:/Python\"*)",
+      "Bash(py --version)",
+      "Bash(py -3 --version)",
+      "Read(//c/Program Files/**)",
+      "Read(//c/Users/Tajmmul/AppData/Roaming/**)",
+      "Bash(powershell.exe -Command \"Get-Command node,python,py -ErrorAction SilentlyContinue | Select-Object Name,Source\")",
+      "Bash(powershell.exe -Command \"Start-Process 'C:\\\\Users\\\\Tajmmul\\\\OneDrive\\\\Documents\\\\claude ai\\\\tataheer traders\\\\school-management.html'\")",
+      "Bash(powershell.exe -Command \"[Convert]::ToBase64String\\([IO.File]::ReadAllBytes\\('C:\\\\Users\\\\Tajmmul\\\\OneDrive\\\\Documents\\\\claude ai\\\\tataheer traders\\\\school-app\\\\school logo\\\\diss png logo.png'\\)\\)\")",
+      "Bash(powershell.exe -Command \"\\(Get-Item 'C:\\\\Users\\\\Tajmmul\\\\OneDrive\\\\Documents\\\\claude ai\\\\tataheer traders\\\\school-app\\\\school logo\\\\diss png logo.png'\\).Length\")",
+      "Read(//tmp/**)",
+      "Bash(where npx:*)",
+      "Bash(where py:*)",
+      "Bash(where php:*)",
+      "Bash(where ruby:*)",
+      "Bash(where perl:*)",
+      "Bash(where pwsh:*)",
+      "Bash(where powershell:*)",
+      "Bash(taskkill /F /IM powershell.exe)"
+    ]
+  }
+}
