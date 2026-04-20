@@ -42,7 +42,8 @@
       "Bash(powershell.exe -Command \"cd 'C:\\\\Users\\\\Tajmmul\\\\OneDrive\\\\Documents\\\\claude ai\\\\tataheer traders'; git log --oneline -8 2>&1\")",
       "Bash(powershell.exe -Command \"cd 'C:\\\\Users\\\\Tajmmul\\\\OneDrive\\\\Documents\\\\claude ai\\\\tataheer traders'; git show --stat HEAD 2>&1\")",
       "Bash(powershell.exe -Command \"cd 'C:\\\\Users\\\\Tajmmul\\\\OneDrive\\\\Documents\\\\claude ai\\\\tataheer traders'; git show HEAD:index.html | Select-String -Pattern 'STEP 1|Render app immediately|fb-loading.*remove|createRoot' | Select-Object -First 10\")",
-      "Bash(powershell.exe -Command \"cd 'C:\\\\Users\\\\Tajmmul\\\\OneDrive\\\\Documents\\\\claude ai\\\\tataheer traders'; git add 'diss-app/sw.js'; git commit -m 'fix: sw network-first for HTML to stop serving old cached version'; git push origin main 2>&1\")"
+      "Bash(powershell.exe -Command \"cd 'C:\\\\Users\\\\Tajmmul\\\\OneDrive\\\\Documents\\\\claude ai\\\\tataheer traders'; git add 'diss-app/sw.js'; git commit -m 'fix: sw network-first for HTML to stop serving old cached version'; git push origin main 2>&1\")",
+      "mcp__Claude_in_Chrome__tabs_context_mcp"
     ]
   }
 }
