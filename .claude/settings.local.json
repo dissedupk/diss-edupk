@@ -34,7 +34,15 @@
       "Bash(copy \"C:\\\\Users\\\\Tajmmul\\\\OneDrive\\\\Documents\\\\claude ai\\\\tataheer traders\\\\index.html\" \"C:\\\\Users\\\\Tajmmul\\\\OneDrive\\\\Documents\\\\claude ai\\\\tataheer traders\\\\diss-app\\\\index.html\" /Y)",
       "Bash(powershell.exe -Command \"Copy-Item 'C:\\\\Users\\\\Tajmmul\\\\OneDrive\\\\Documents\\\\claude ai\\\\tataheer traders\\\\index.html' 'C:\\\\Users\\\\Tajmmul\\\\OneDrive\\\\Documents\\\\claude ai\\\\tataheer traders\\\\diss-app\\\\index.html' -Force\")",
       "Bash(powershell.exe -Command \"Get-Item 'C:\\\\Users\\\\Tajmmul\\\\OneDrive\\\\Documents\\\\claude ai\\\\tataheer traders\\\\diss-app\\\\index.html' | Select-Object Name, LastWriteTime, Length\")",
-      "Bash(powershell.exe -Command \"Copy-Item 'C:\\\\Users\\\\Tajmmul\\\\OneDrive\\\\Documents\\\\claude ai\\\\tataheer traders\\\\index.html' 'C:\\\\Users\\\\Tajmmul\\\\OneDrive\\\\Documents\\\\claude ai\\\\tataheer traders\\\\diss-app\\\\index.html' -Force; Write-Output 'Done'\")"
+      "Bash(powershell.exe -Command \"Copy-Item 'C:\\\\Users\\\\Tajmmul\\\\OneDrive\\\\Documents\\\\claude ai\\\\tataheer traders\\\\index.html' 'C:\\\\Users\\\\Tajmmul\\\\OneDrive\\\\Documents\\\\claude ai\\\\tataheer traders\\\\diss-app\\\\index.html' -Force; Write-Output 'Done'\")",
+      "Bash(powershell.exe -Command \"Get-Content 'C:\\\\Users\\\\Tajmmul\\\\OneDrive\\\\Documents\\\\claude ai\\\\tataheer traders\\\\netlify.toml'\")",
+      "Bash(powershell.exe -Command \"Get-ChildItem 'C:\\\\Users\\\\Tajmmul\\\\OneDrive\\\\Documents\\\\claude ai\\\\tataheer traders\\\\' | Select-Object Name, LastWriteTime | Sort-Object LastWriteTime -Descending | Select-Object -First 15\")",
+      "Bash(powershell.exe -Command \"cd 'C:\\\\Users\\\\Tajmmul\\\\OneDrive\\\\Documents\\\\claude ai\\\\tataheer traders'; git status 2>&1\")",
+      "Bash(powershell.exe -Command \"cd 'C:\\\\Users\\\\Tajmmul\\\\OneDrive\\\\Documents\\\\claude ai\\\\tataheer traders'; git ls-files 2>&1 | head -20\")",
+      "Bash(powershell.exe -Command \"cd 'C:\\\\Users\\\\Tajmmul\\\\OneDrive\\\\Documents\\\\claude ai\\\\tataheer traders'; git log --oneline -8 2>&1\")",
+      "Bash(powershell.exe -Command \"cd 'C:\\\\Users\\\\Tajmmul\\\\OneDrive\\\\Documents\\\\claude ai\\\\tataheer traders'; git show --stat HEAD 2>&1\")",
+      "Bash(powershell.exe -Command \"cd 'C:\\\\Users\\\\Tajmmul\\\\OneDrive\\\\Documents\\\\claude ai\\\\tataheer traders'; git show HEAD:index.html | Select-String -Pattern 'STEP 1|Render app immediately|fb-loading.*remove|createRoot' | Select-Object -First 10\")",
+      "Bash(powershell.exe -Command \"cd 'C:\\\\Users\\\\Tajmmul\\\\OneDrive\\\\Documents\\\\claude ai\\\\tataheer traders'; git add 'diss-app/sw.js'; git commit -m 'fix: sw network-first for HTML to stop serving old cached version'; git push origin main 2>&1\")"
     ]
   }
 }
