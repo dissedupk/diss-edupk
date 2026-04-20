@@ -2,8 +2,29 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Discovery International School System</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+  <title>DISS — School Management</title>
+
+  <!-- ── PWA Meta Tags ─────────────────────────────── -->
+  <meta name="application-name" content="DISS School"/>
+  <meta name="description" content="Discovery International School System — Fee, Staff, Inventory & Finance Management"/>
+  <meta name="theme-color" content="#dc2626"/>
+  <meta name="background-color" content="#f1f5f9"/>
+
+  <!-- Android / Chrome -->
+  <meta name="mobile-web-app-capable" content="yes"/>
+
+  <!-- iOS / Safari -->
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="DISS School"/>
+
+  <!-- PWA Manifest -->
+  <link rel="manifest" href="/manifest.json"/>
+
+  <!-- iOS home-screen icons -->
+  <link rel="apple-touch-icon" href="https://ui-avatars.com/api/?name=DISS&size=180&background=dc2626&color=ffffff&bold=true&font-size=0.4"/>
+
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -38,7 +59,7 @@
   <div style="text-align:center">
     <div style="font-size:2.5rem;margin-bottom:1rem">🏫</div>
     <div style="font-size:1.1rem;color:#475569;font-weight:600">Discovery International School System</div>
-    <div style="font-size:0.85rem;color:#94a3b8;margin-top:0.75rem">Syncing data from cloud...</div>
+    <div class="fb-msg" style="font-size:0.85rem;color:#94a3b8;margin-top:0.75rem">Connecting to Firebase cloud...</div>
     <div style="margin-top:1rem;width:40px;height:40px;border:3px solid #e2e8f0;border-top-color:#3b82f6;border-radius:50%;animation:spin 0.8s linear infinite;display:inline-block"></div>
     <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
   </div>
@@ -622,48 +643,7 @@ function Dashboard({ setPage }) {
         </div>
       </div>
 
-      {/* ══════════════════════════════════════════════════════════════════ */}
-      {/* ── TIER 3: Account Wallets (Real-Time Liquidity) ── */}
-      {/* ══════════════════════════════════════════════════════════════════ */}
-      {dashAccts.length > 0 && (
-        <>
-          <div className="mb-2">
-            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">🏛️ Tier 3 — Account Wallets (Real-Time Balance)</p>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-            {dashAccts.map(a => {
-              const b = dashAcctBal[a.id] || 0;
-              return (
-                <div key={a.id} onClick={() => setPage('cashbook')}
-                  className={`rounded-2xl border-2 p-4 cursor-pointer hover:shadow-md transition-all ${b >= 0 ? 'bg-white border-gray-200 hover:border-blue-300' : 'bg-red-50 border-red-200'}`}>
-                  <div className="text-2xl mb-2">{acctIcon(a.type)}</div>
-                  <div className={`text-lg font-extrabold ${b >= 0 ? 'text-blue-700' : 'text-red-600'}`}>
-                    {b < 0 ? '-' : ''}Rs. {Math.abs(b).toLocaleString()}
-                  </div>
-                  <div className="text-xs text-gray-500 font-semibold mt-0.5 truncate">{a.name}</div>
-                  {a.number && <div className="text-xs text-gray-400">#{a.number}</div>}
-                  <div className={`mt-2 text-xs font-bold px-2 py-0.5 rounded-lg w-fit ${b >= 0 ? 'bg-blue-50 text-blue-600' : 'bg-red-100 text-red-600'}`}>
-                    {b >= 0 ? '✅ Active' : '⚠️ Low'}
-                  </div>
-                </div>
-              );
-            })}
-            {/* Total Liquidity Card */}
-            <div onClick={() => setPage('cashbook')}
-              className={`rounded-2xl border-2 p-4 cursor-pointer hover:shadow-md transition-all col-span-1 ${totalLiquidity >= 0 ? 'bg-indigo-50 border-indigo-200' : 'bg-red-50 border-red-200'}`}>
-              <div className="text-2xl mb-2">💼</div>
-              <div className={`text-lg font-extrabold ${totalLiquidity >= 0 ? 'text-indigo-700' : 'text-red-600'}`}>
-                {totalLiquidity < 0 ? '-' : ''}Rs. {Math.abs(totalLiquidity).toLocaleString()}
-              </div>
-              <div className="text-xs text-gray-500 font-semibold mt-0.5">Total Liquidity</div>
-              <div className="text-xs text-gray-400">{dashAccts.length} accounts</div>
-              <div className={`mt-2 text-xs font-bold px-2 py-0.5 rounded-lg w-fit ${totalLiquidity >= 0 ? 'bg-indigo-100 text-indigo-600' : 'bg-red-100 text-red-600'}`}>
-                {totalLiquidity >= 0 ? '✅ Healthy' : '⚠️ Deficit'}
-              </div>
-            </div>
-          </div>
-        </>
-      )}
+      {/* Tier 3 Account Wallets — hidden from Dashboard (visible in Cash Book) */}
 
       {/* ── Quick Stats Grid ── */}
       <div className="mb-2">
@@ -6160,6 +6140,13 @@ function App() {
               <p className="text-xs text-gray-400 leading-tight hidden sm:block">Discovery International School System</p>
             </div>
             <span className="text-xs text-gray-400 hidden sm:block bg-gray-50 px-2 py-1 rounded-lg border border-gray-100">{NOW.toLocaleDateString('en-PK', { weekday:'short', year:'numeric', month:'short', day:'numeric' })}</span>
+            {/* Firebase cloud sync status */}
+            <span title={window._fbConnected ? 'Firebase connected — data syncing across all devices' : 'Firebase offline — changes saved locally only'}
+              className={`hidden sm:flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg border font-semibold ${window._fbConnected ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-red-50 border-red-200 text-red-600'}`}>
+              <span className={`w-2 h-2 rounded-full ${window._fbConnected ? 'bg-emerald-500' : 'bg-red-500'}`}
+                style={window._fbConnected ? {boxShadow:'0 0 0 2px #bbf7d0',animation:'pulse 2s infinite'} : {}}/>
+              {window._fbConnected ? '☁️ Synced' : '⚠️ Offline'}
+            </span>
             <button onClick={logout} className="text-xs text-gray-500 hover:text-red-600 px-3 py-1.5 rounded-lg hover:bg-red-50 border border-gray-200 hover:border-red-200 transition-all hidden sm:flex items-center gap-1">⏏ <span>Logout</span></button>
           </div>
         </header>
@@ -6188,33 +6175,78 @@ function App() {
 
 (async function() {
   const pageLoadTime = Date.now();
-  try {
-    // Load all data from Firebase into localStorage
-    const snap = await window._fbDB.ref('sms').once('value');
-    const data = snap.val();
-    if (data) Object.keys(data).forEach(k => localStorage.setItem(k, JSON.stringify(data[k])));
-    window._fbSyncComplete = true; // Allow Firebase writes now that sync is done
+  const loadingEl = document.getElementById('fb-loading');
+  const loadingMsg = loadingEl ? loadingEl.querySelector('.fb-msg') : null;
 
-    // Listen for real-time changes from other devices
-    // Skip first callback (it fires immediately with current value)
+  const setMsg = (txt) => { if (loadingMsg) loadingMsg.textContent = txt; };
+
+  try {
+    setMsg('Connecting to Firebase cloud...');
+
+    // ── Test connection with a short timeout ──
+    const snap = await Promise.race([
+      window._fbDB.ref('sms').once('value'),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000))
+    ]);
+
+    const data = snap.val();
+    if (data) {
+      setMsg('Loading cloud data...');
+      Object.keys(data).forEach(k => localStorage.setItem(k, JSON.stringify(data[k])));
+    }
+
+    window._fbSyncComplete = true;
+    window._fbConnected    = true;
+    setMsg('✅ Cloud sync successful!');
+
+    // ── Real-time listener: pull fresh data when another device saves ──
+    // Instead of reloading (which caused infinite loop), we fetch + update localStorage silently
     let listenerReady = false;
-    window._fbDB.ref('sms_meta/lastUpdate').on('value', snap => {
+    window._fbDB.ref('sms_meta/lastUpdate').on('value', async snap => {
       if (!listenerReady) { listenerReady = true; return; } // skip first fire
       const meta = snap.val();
-      if (meta && meta.writer && meta.writer !== window._sessionId && meta.time > pageLoadTime) {
-        // Another device changed data AFTER this page loaded — reload to get latest
-        window.location.reload();
-      }
+      if (!meta || !meta.writer || meta.writer === window._sessionId) return; // our own write, ignore
+      if (meta.time <= pageLoadTime) return; // old update from before we loaded, ignore
+      // Another device saved NEW data — pull it silently without page reload
+      try {
+        const fresh = await window._fbDB.ref('sms').once('value');
+        const freshData = fresh.val();
+        if (freshData) {
+          Object.keys(freshData).forEach(k => localStorage.setItem(k, JSON.stringify(freshData[k])));
+          // Show a small toast instead of reloading
+          const toast = document.createElement('div');
+          toast.style.cssText = 'position:fixed;bottom:20px;right:20px;background:#1e3a8a;color:#fff;padding:10px 18px;border-radius:12px;font-size:13px;font-weight:600;z-index:99999;box-shadow:0 4px 20px rgba(0,0,0,0.2)';
+          toast.textContent = '☁️ New data synced — refresh page to see changes';
+          document.body.appendChild(toast);
+          setTimeout(() => toast.remove(), 5000);
+        }
+      } catch(e) { /* silent fail */ }
     });
+
   } catch(e) {
-    console.warn('Firebase sync failed, using local data:', e);
-    window._fbSyncComplete = true; // Still allow writes even if sync failed
+    console.warn('Firebase sync failed:', e.message);
+    window._fbSyncComplete = true;
+    window._fbConnected    = false;
+    if (loadingEl) {
+      const errDiv = document.createElement('div');
+      errDiv.style.cssText = 'margin-top:12px;padding:10px 16px;background:#fef2f2;border:1px solid #fecaca;border-radius:10px;font-size:12px;color:#dc2626;max-width:320px;text-align:left';
+      errDiv.innerHTML = `
+        <b>⚠️ Firebase not reachable</b><br/>
+        <span style="color:#6b7280">Possible causes:</span><br/>
+        1. Firebase Database Rules blocking access<br/>
+        2. No internet connection<br/>
+        <span style="color:#6b7280;font-size:11px">Opening with local data only. Changes will NOT sync.</span>
+      `;
+      loadingEl.querySelector('div').appendChild(errDiv);
+      await new Promise(r => setTimeout(r, 3000)); // show error for 3s
+    }
   }
-  // Remove loading screen and render app
-  const loading = document.getElementById('fb-loading');
-  if (loading) loading.remove();
+
+  if (loadingEl) loadingEl.remove();
   ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
 })();
 </script>
+
+<!-- Service Worker: handled by Netlify separately -->
 </body>
 </html>
