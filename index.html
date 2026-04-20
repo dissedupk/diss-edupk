@@ -6188,24 +6188,41 @@ function App() {
 (async function() {
   const pageLoadTime = Date.now();
   try {
-    // Load all data from Firebase into localStorage
-    const snap = await window._fbDB.ref('sms').once('value');
+    // Load all data from Firebase with 6-second timeout fallback
+    const fbFetch = window._fbDB.ref('sms').once('value');
+    const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 6000));
+    const snap = await Promise.race([fbFetch, timeout]);
     const data = snap.val();
     if (data) Object.keys(data).forEach(k => localStorage.setItem(k, JSON.stringify(data[k])));
 
-    // Listen for real-time changes from other devices
-    // Skip first callback (it fires immediately with current value)
+    // Listen for real-time changes from other devices (NO reload — silent sync)
     let listenerReady = false;
-    window._fbDB.ref('sms_meta/lastUpdate').on('value', snap => {
-      if (!listenerReady) { listenerReady = true; return; } // skip first fire
+    window._fbDB.ref('sms_meta/lastUpdate').on('value', async snap => {
+      if (!listenerReady) { listenerReady = true; return; }
       const meta = snap.val();
-      if (meta && meta.writer && meta.writer !== window._sessionId && meta.time > pageLoadTime) {
-        // Another device changed data AFTER this page loaded — reload to get latest
-        window.location.reload();
-      }
+      if (!meta || !meta.writer || meta.writer === window._sessionId) return;
+      if (meta.time <= pageLoadTime) return;
+      // Silent pull — update localStorage without reloading
+      try {
+        const fresh = await window._fbDB.ref('sms').once('value');
+        const freshData = fresh.val();
+        if (freshData) {
+          Object.keys(freshData).forEach(k => localStorage.setItem(k, JSON.stringify(freshData[k])));
+          // Show a small toast — user can refresh manually to see new data
+          const toast = document.createElement('div');
+          toast.textContent = '☁️ New data synced — refresh to see changes';
+          Object.assign(toast.style, {
+            position:'fixed', bottom:'20px', left:'50%', transform:'translateX(-50%)',
+            background:'#1e40af', color:'#fff', padding:'10px 20px', borderRadius:'8px',
+            fontSize:'13px', zIndex:'99999', boxShadow:'0 4px 12px rgba(0,0,0,0.3)'
+          });
+          document.body.appendChild(toast);
+          setTimeout(() => toast.remove(), 5000);
+        }
+      } catch(e) {}
     });
   } catch(e) {
-    console.warn('Firebase sync failed, using local data:', e);
+    console.warn('Firebase sync failed or timed out, using local data:', e);
   }
   // Remove loading screen and render app
   const loading = document.getElementById('fb-loading');

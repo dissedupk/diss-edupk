@@ -30,7 +30,8 @@
       "Bash(where perl:*)",
       "Bash(where pwsh:*)",
       "Bash(where powershell:*)",
-      "Bash(taskkill /F /IM powershell.exe)"
+      "Bash(taskkill /F /IM powershell.exe)",
+      "Bash(copy \"C:\\\\Users\\\\Tajmmul\\\\OneDrive\\\\Documents\\\\claude ai\\\\tataheer traders\\\\index.html\" \"C:\\\\Users\\\\Tajmmul\\\\OneDrive\\\\Documents\\\\claude ai\\\\tataheer traders\\\\diss-app\\\\index.html\" /Y)"
     ]
   }
 }
