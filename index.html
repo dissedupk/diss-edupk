@@ -268,10 +268,10 @@ const MONTHS  = ['January','February','March','April','May','June','July','Augus
 const NOW     = new Date();
 
 // ── Shared UI ────────────────────────────────────────────────────────────────
-function Modal({ title, onClose, children, wide = false }) {
+function Modal({ title, onClose, children, wide = false, xl = false }) {
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-3">
-      <div className={`bg-white rounded-2xl shadow-2xl w-full ${wide ? 'max-w-2xl' : 'max-w-md'} max-h-[92vh] flex flex-col`}>
+      <div className={`bg-white rounded-2xl shadow-2xl w-full ${xl ? 'max-w-4xl' : wide ? 'max-w-2xl' : 'max-w-md'} max-h-[95vh] flex flex-col`}>
         <div className="flex items-center justify-between px-5 py-4 border-b shrink-0">
           <h3 className="text-base font-bold text-gray-800">{title}</h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-2xl leading-none w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100">&times;</button>
@@ -787,6 +787,144 @@ function Dashboard({ setPage }) {
 // ── STUDENTS ─────────────────────────────────────────────────────────────────
 const blankStu = { name:'', father:'', cls:'1', roll:'', annualFund:'', openingBalance:'', contact:'', address:'', family:'', familyId:'', siblingDiscount:'', photo:'' };
 
+// ── Sibling Registration — opens separate popup window ──────────────────────
+function openSiblingWindow() {
+  const classes = JSON.stringify(CLASSES);
+  const existingStudents = JSON.stringify(S.get(K.STU, []));
+  const win = window.open('', '_blank', 'width=860,height=780,scrollbars=yes,resizable=yes');
+  win.document.write(`<!DOCTYPE html><html><head><title>Add Siblings — DISS</title>
+  <meta charset="utf-8"/>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Segoe UI',Arial,sans-serif;background:#f1f5f9;padding:20px;color:#1a1a1a}
+    .hdr{text-align:center;margin-bottom:18px;padding-bottom:14px;border-bottom:3px solid #c0392b}
+    .hdr h1{font-size:20px;color:#c0392b;font-weight:800;letter-spacing:1px}
+    .hdr p{font-size:12px;color:#6b7280;margin-top:4px}
+    .card{background:#fff;border-radius:14px;padding:18px;margin-bottom:14px;box-shadow:0 1px 4px rgba(0,0,0,0.08)}
+    .card h2{font-size:13px;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #f3f4f6}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+    label{display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+    input,select{width:100%;border:2px solid #e5e7eb;border-radius:8px;padding:8px 12px;font-size:13px;outline:none;transition:.2s}
+    input:focus,select:focus{border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.1)}
+    .sib-row{display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:8px;align-items:center;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px;margin-bottom:8px}
+    .sib-row input,select{margin:0}
+    .sib-num{font-size:12px;font-weight:700;color:#6b7280;text-align:center;background:#e5e7eb;border-radius:6px;padding:4px 8px}
+    .btn{padding:10px 20px;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;transition:.2s}
+    .btn-blue{background:#3b82f6;color:#fff}.btn-blue:hover{background:#2563eb}
+    .btn-green{background:#10b981;color:#fff;width:100%;padding:14px;font-size:15px}.btn-green:hover{background:#059669}
+    .btn-red{background:#ef4444;color:#fff;padding:6px 10px;font-size:12px}.btn-red:hover{background:#dc2626}
+    .btn-gray{background:#e5e7eb;color:#374151}.btn-gray:hover{background:#d1d5db}
+    .msg{padding:10px 14px;border-radius:8px;font-size:13px;font-weight:600;margin-bottom:12px;display:none}
+    .msg.success{background:#d1fae5;color:#065f46;border:1px solid #6ee7b7;display:block}
+    .msg.error{background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;display:block}
+    .sibs-header{display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:8px;margin-bottom:4px;padding:0 10px}
+    .sibs-header span{font-size:10px;font-weight:700;color:#9ca3af;text-transform:uppercase}
+  </style></head><body>
+  <div class="hdr">
+    <h1>👨‍👧‍👦 Add Siblings Together</h1>
+    <p>Enter common family info once — add each sibling's name, class and roll separately</p>
+  </div>
+  <div id="msg" class="msg"></div>
+
+  <div class="card">
+    <h2>👨 Common Family Details</h2>
+    <div class="grid2" style="margin-bottom:10px">
+      <div><label>Father's Name *</label><input id="father" placeholder="Father's full name"/></div>
+      <div><label>Family Name</label><input id="family" placeholder="e.g. Khan Family"/></div>
+    </div>
+    <div class="grid3">
+      <div><label>Family ID</label><input id="familyId" placeholder="e.g. F-001"/></div>
+      <div><label>Contact Number</label><input id="contact" placeholder="0321-1234567"/></div>
+      <div><label>Address</label><input id="address" placeholder="Home address"/></div>
+    </div>
+    <div class="grid2" style="margin-top:10px">
+      <div><label>Annual Fund (Rs.) — same for all</label><input id="annualFund" type="number" min="0" placeholder="0 if not applicable"/></div>
+      <div><label>Sibling Discount (Rs./month) — same for all</label><input id="sibDisc" type="number" min="0" placeholder="0 if none"/></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>👦👧 Siblings — Add Each Child</h2>
+    <div class="sibs-header">
+      <span>Full Name *</span><span>Class *</span><span>Roll No *</span><span></span>
+    </div>
+    <div id="sibRows"></div>
+    <button class="btn btn-blue" onclick="addRow()" style="margin-top:8px">+ Add Another Sibling</button>
+  </div>
+
+  <button class="btn btn-green" onclick="saveAll()">✅ Save All Siblings</button>
+  <p style="text-align:center;font-size:11px;color:#9ca3af;margin-top:10px">This window will close automatically after saving.</p>
+
+  <script>
+    const CLASSES = ${classes};
+    let rowCount = 0;
+    function clsOpts(sel) {
+      return CLASSES.map(c => '<option value="'+c+'"'+(sel===c?' selected':'')+'>Class '+c+'</option>').join('');
+    }
+    function addRow(name, cls, roll) {
+      rowCount++;
+      const n = rowCount;
+      const div = document.createElement('div');
+      div.className = 'sib-row';
+      div.id = 'row'+n;
+      div.innerHTML = '<input id="sname'+n+'" placeholder="Student full name" value="'+(name||'')+'"/>'
+        +'<select id="scls'+n+'">'+clsOpts(cls||'1')+'</select>'
+        +'<input id="sroll'+n+'" placeholder="e.g. 101" value="'+(roll||'')+'"/>'
+        +'<button class="btn btn-red" onclick="removeRow('+n+')" title="Remove">✕</button>';
+      document.getElementById('sibRows').appendChild(div);
+    }
+    function removeRow(n) {
+      const el = document.getElementById('row'+n);
+      if (el) el.remove();
+    }
+    function showMsg(txt, type) {
+      const el = document.getElementById('msg');
+      el.textContent = txt; el.className = 'msg '+type;
+      setTimeout(() => el.className='msg', 4000);
+    }
+    function saveAll() {
+      const father  = document.getElementById('father').value.trim();
+      const family  = document.getElementById('family').value.trim();
+      const familyId= document.getElementById('familyId').value.trim();
+      const contact = document.getElementById('contact').value.trim();
+      const address = document.getElementById('address').value.trim();
+      const af      = document.getElementById('annualFund').value;
+      const sibDisc = document.getElementById('sibDisc').value;
+      if (!father) { showMsg('❌ Father Name is required.', 'error'); return; }
+      const rows = document.querySelectorAll('.sib-row');
+      const siblings = [];
+      let ok = true;
+      rows.forEach(row => {
+        const id = row.id.replace('row','');
+        const name = document.getElementById('sname'+id)?.value.trim();
+        const cls  = document.getElementById('scls'+id)?.value;
+        const roll = document.getElementById('sroll'+id)?.value.trim();
+        if (!name || !roll) { ok=false; return; }
+        siblings.push({ name, cls, roll });
+      });
+      if (!ok || siblings.length === 0) { showMsg('❌ Fill all sibling names and roll numbers.', 'error'); return; }
+      // Read current students from localStorage
+      const existing = JSON.parse(localStorage.getItem('sms_stu') || '[]');
+      const uid = () => Math.random().toString(36).slice(2,10)+Date.now().toString(36);
+      const newStudents = siblings.map(s => ({
+        id: uid(), name: s.name, father, cls: s.cls, roll: s.roll,
+        annualFund: af||'', openingBalance:'', contact, address,
+        family: family||father+' Family', familyId, siblingDiscount: sibDisc||'', photo:''
+      }));
+      const updated = [...existing, ...newStudents];
+      localStorage.setItem('sms_stu', JSON.stringify(updated));
+      showMsg('✅ '+newStudents.length+' siblings saved successfully! Refreshing parent window...', 'success');
+      if (window.opener && !window.opener.closed) {
+        setTimeout(() => { window.opener.location.reload(); window.close(); }, 1500);
+      }
+    }
+    // Start with 2 sibling rows
+    addRow(); addRow();
+  <\/script></body></html>`);
+  win.document.close();
+}
+
 function Students() {
   const { role } = React.useContext(UserContext);
   const isAdmin      = role === 'admin';
@@ -835,8 +973,9 @@ function Students() {
     <div>
       <div className="flex items-center justify-between mb-5">
         <h2 className="text-xl font-bold text-gray-800">Students <span className="text-gray-400 font-normal text-base">({list.length})</span></h2>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <Btn variant="outline" onClick={printStudents}>🖨️ Print</Btn>
+          {canAdd && <Btn variant="outline" onClick={openSiblingWindow}>👨‍👧‍👦 Add Siblings</Btn>}
           {canAdd && <Btn onClick={openAdd}>+ Add Student</Btn>}
         </div>
       </div>
@@ -951,31 +1090,44 @@ function Students() {
       }
 
       {form && (
-        <Modal title={form.id ? 'Edit Student' : 'Add New Student'} onClose={() => setForm(null)}>
-          <Inp label="Student Full Name *" value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="Student full name"/>
-          <Inp label="Father's Name *" value={form.father||''} onChange={e => setForm({...form, father: e.target.value})} placeholder="Father's full name"/>
-          <Sel label="Class *" value={form.cls} onChange={e => setForm({...form, cls: e.target.value})} options={CLASSES.map(c => ({v:c, l:`Class ${c}`}))}/>
-          <Inp label="Roll Number *" value={form.roll} onChange={e => setForm({...form, roll: e.target.value})} placeholder="e.g. 101"/>
-          <div className="flex gap-2">
-            <div className="flex-1">
-              <Inp label="Annual Fund (Rs.)" type="number" min="0" value={form.annualFund||''} onChange={e => setForm({...form, annualFund: e.target.value})} placeholder="e.g. 500 — leave blank if none"/>
-            </div>
-            <div className="flex-1">
-              <Inp label="Opening Balance (Rs.)" type="number" min="0" value={form.openingBalance||''} onChange={e => setForm({...form, openingBalance: e.target.value})} placeholder="Previous dues — 0 if none"/>
-            </div>
+        <Modal title={form.id ? '✏️ Edit Student' : '🎓 Add New Student'} onClose={() => setForm(null)} xl>
+          {/* ── Row 1: Basic Info ── */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-0">
+            <Inp label="Student Full Name *" value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="Student full name"/>
+            <Inp label="Father's Name *" value={form.father||''} onChange={e => setForm({...form, father: e.target.value})} placeholder="Father's full name"/>
+          </div>
+          {/* ── Row 2: Class / Roll ── */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-0">
+            <Sel label="Class *" value={form.cls} onChange={e => setForm({...form, cls: e.target.value})} options={CLASSES.map(c => ({v:c, l:`Class ${c}`}))}/>
+            <Inp label="Roll Number *" value={form.roll} onChange={e => setForm({...form, roll: e.target.value})} placeholder="e.g. 101"/>
+          </div>
+          {/* ── Row 3: Annual Fund / Opening Balance ── */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-0">
+            <Inp label="Annual Fund (Rs.)" type="number" min="0" value={form.annualFund||''} onChange={e => setForm({...form, annualFund: e.target.value})} placeholder="e.g. 500 — leave blank if none"/>
+            <Inp label="Opening Balance (Rs.) — Previous Dues" type="number" min="0" value={form.openingBalance||''} onChange={e => setForm({...form, openingBalance: e.target.value})} placeholder="0 if no prior balance"/>
           </div>
           {Number(form.openingBalance) > 0 && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2 mb-2 text-xs text-amber-700">
-              ⚠️ Opening balance of <strong>Rs. {Number(form.openingBalance).toLocaleString()}</strong> will appear as a prior due in fee collection.
+              ⚠️ Opening balance of <strong>Rs. {Number(form.openingBalance).toLocaleString()}</strong> will show as prior due in fee collection.
             </div>
           )}
-          <div className="flex gap-2">
-            <div className="flex-1"><Inp label="Family Name (for siblings)" value={form.family||''} onChange={e => setForm({...form, family: e.target.value})} placeholder="e.g. Khan Family — same for all siblings"/></div>
-            <div style={{width:130}}><Inp label="Family ID / Serial No." value={form.familyId||''} onChange={e => setForm({...form, familyId: e.target.value})} placeholder="e.g. F-001"/></div>
+          {/* ── Divider: Family / Sibling Info ── */}
+          <div className="border-t border-gray-100 pt-3 mt-1 mb-1">
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">👨‍👧‍👦 Family & Sibling Info</p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-5 gap-y-0">
+              <div className="sm:col-span-2">
+                <Inp label="Family Name (for siblings)" value={form.family||''} onChange={e => setForm({...form, family: e.target.value})} placeholder="e.g. Khan Family — same for all siblings"/>
+              </div>
+              <Inp label="Family ID / Serial No." value={form.familyId||''} onChange={e => setForm({...form, familyId: e.target.value})} placeholder="e.g. F-001"/>
+            </div>
+            <Inp label="Sibling Discount (Rs./month)" type="number" min="0" value={form.siblingDiscount||''} onChange={e => setForm({...form, siblingDiscount: e.target.value})} placeholder="Monthly discount for being a sibling — 0 if none"/>
           </div>
-          <Inp label="Sibling Discount (Rs./month)" type="number" min="0" value={form.siblingDiscount||''} onChange={e => setForm({...form, siblingDiscount: e.target.value})} placeholder="Monthly discount for being a sibling — 0 if none"/>
-          <Inp label="Contact Number" value={form.contact} onChange={e => setForm({...form, contact: e.target.value})} placeholder="e.g. 0321-1234567"/>
-          <Inp label="Address" value={form.address} onChange={e => setForm({...form, address: e.target.value})} placeholder="Home address"/>
+          {/* ── Row: Contact / Address ── */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-0">
+            <Inp label="Contact Number" value={form.contact} onChange={e => setForm({...form, contact: e.target.value})} placeholder="e.g. 0321-1234567"/>
+            <Inp label="Address" value={form.address} onChange={e => setForm({...form, address: e.target.value})} placeholder="Home address"/>
+          </div>
+          {/* ── Photo ── */}
           <Field label="Student Photo (Optional — used for ID card)">
             <div className="flex items-center gap-3 mb-2">
               {form.photo
