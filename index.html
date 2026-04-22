@@ -4976,7 +4976,7 @@ function Exams() {
   // ── Paper Tab State ──
   const [paperSettings, setPaperSettings] = useState({ cls: CLASSES[0], subject:'English', term:'Term 1', year: NOW.getFullYear(), date:'', totalMarks:100, time:'2 Hours', instructions:'Attempt all questions.' });
   const [paperQs, setPaperQs] = useState([]);
-  const blankQ = () => ({ id: uid(), section:'', type:'english', text:'', marks:5, shapes:[], narrowCount:'', writtenCount:'', urduCount:'', mathRows:'', mathCols:'', shortCount:'', shapesLineCount:'', shapeSize:80, shapeNameLine:false, shapeAlign:'left', tableEnabled:false, tableColumns:[{header:''},{header:''}], tableRows:5, tableData:{}, tableDir:'ltr', tableRowHeight:'0.45in' });
+  const blankQ = () => ({ id: uid(), section:'', type:'english', text:'', marks:5, shapes:[], narrowCount:1, writtenCount:1, urduCount:1, mathRows:1, mathCols:1, shortCount:1, shapesLineCount:1, shapeSize:80, shapeNameLine:false, shapeAlign:'left', tableEnabled:false, tableColumns:[{header:''},{header:''}], tableRows:5, tableData:{}, tableDir:'ltr', tableRowHeight:'0.45in' });
   const addQ   = () => setPaperQs(prev => [...prev, blankQ()]);
   const removeQ = (id) => setPaperQs(prev => prev.filter(q => q.id !== id));
   const updateQ = (id, field, val) => setPaperQs(prev => prev.map(q => q.id===id ? {...q, [field]: val} : q));
