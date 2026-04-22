@@ -1026,13 +1026,15 @@ function openSiblingWindow() {
       setTimeout(function(){ window.close(); }, 1500);
       setTimeout(function(){ window.close(); }, 3000);
     }
-    // Attach live preview listeners
-    document.getElementById('monthlyFee').addEventListener('input', updatePreviews);
-    document.getElementById('annualFund').addEventListener('input', updatePreviews);
-    document.getElementById('sibDisc').addEventListener('input', updatePreviews);
-    // Start with 1 row
+    // Start with 1 row FIRST — must run before anything else
     addRow();
     updatePreviews();
+    // Attach live preview listeners
+    try {
+      document.getElementById('monthlyFee').addEventListener('input', updatePreviews);
+      document.getElementById('annualFund').addEventListener('input', updatePreviews);
+      document.getElementById('sibDisc').addEventListener('input', updatePreviews);
+    } catch(e) {}
   <\/script></body></html>`);
   win.document.close();
 }
