@@ -4976,7 +4976,7 @@ function Exams() {
   // ── Paper Tab State ──
   const [paperSettings, setPaperSettings] = useState({ cls: CLASSES[0], subject:'English', term:'Term 1', year: NOW.getFullYear(), date:'', totalMarks:100, time:'2 Hours', instructions:'Attempt all questions.' });
   const [paperQs, setPaperQs] = useState([]);
-  const blankQ = () => ({ id: uid(), section:'', type:'english', text:'', marks:5, shapes:[], narrowCount:6, writtenCount:6, urduCount:6, mathRows:2, mathCols:4 });
+  const blankQ = () => ({ id: uid(), section:'', type:'english', text:'', marks:5, shapes:[], narrowCount:'', writtenCount:'', urduCount:'', mathRows:'', mathCols:'', shortCount:'', shapesLineCount:'', shapeSize:80, shapeNameLine:false, shapeAlign:'left', tableEnabled:false, tableColumns:[{header:''},{header:''}], tableRows:5, tableData:{}, tableDir:'ltr', tableRowHeight:'0.45in' });
   const addQ   = () => setPaperQs(prev => [...prev, blankQ()]);
   const removeQ = (id) => setPaperQs(prev => prev.filter(q => q.id !== id));
   const updateQ = (id, field, val) => setPaperQs(prev => prev.map(q => q.id===id ? {...q, [field]: val} : q));
@@ -5002,33 +5002,60 @@ function Exams() {
       if (q.section && q.section !== sectCurrent) { sectCurrent = q.section; sectionHtml = `<div class="section-hdr">${q.section}</div>`; }
       // notebook line generators
       const engLines = (count) => {
-        let html = '<div class="nb-english">';
-        html += '<div class="nb-redline-top"></div>';
-        for(let i=0;i<(count||6);i++) html += `<div class="nb-line ${i%3===0&&i>0?'nb-redline':'nb-blueline'}"></div>`;
+        let html = '<div class="eng-plain">';
+        for(let g=0;g<(count||1);g++) {
+          html += '<div class="eng-group">';
+          for(let i=0;i<4;i++) html += '<div class="eng-4line"></div>';
+          html += '</div>';
+        }
         html += '</div>';
         return html;
       };
       const urduLines = (count) => {
-        let html = '<div class="nb-urdu">';
-        html += '<div class="nb-redline-top"></div>';
-        for(let i=0;i<(count||6);i++) html += `<div class="nb-line-urdu ${i%3===0&&i>0?'nb-redline':'nb-blueline'}"></div>`;
+        let html = '<div class="urdu-plain">';
+        for(let i=0;i<(count||6);i++) html += `<div class="urdu-plain-line"></div>`;
         html += '</div>';
         return html;
       };
+      // Build table block (works for ALL types)
+      let tableBlock = '';
+      if (q.type === 'table' || q.tableEnabled) {
+        const tcols = q.tableColumns || [{header:''},{header:''}];
+        const trows = Number(q.tableRows) || 5;
+        const tdata = q.tableData || {};
+        const tdir  = q.tableDir || 'ltr';
+        const trh   = q.tableRowHeight || '0.45in';
+        const colW  = Math.floor(100 / tcols.length);
+        const thead = `<tr>${tcols.map(c=>`<th style="width:${colW}%">${c.header||''}</th>`).join('')}</tr>`;
+        const tbody = Array(trows).fill(0).map((_,ri)=>
+          `<tr>${tcols.map((_,ci)=>`<td style="height:${trh}">${tdata[`${ri}_${ci}`]||''}</td>`).join('')}</tr>`
+        ).join('');
+        tableBlock = `<table class="q-table" style="direction:${tdir};margin-bottom:8px"><thead>${thead}</thead><tbody>${tbody}</tbody></table>`;
+      }
+      // Build shapes block (works for ALL types)
+      let shapesBlock = '';
+      if ((q.shapes||[]).length > 0) {
+        const sz = q.shapeSize || 80;
+        const alignStyle = q.shapeAlign==='center'?'justify-content:center':q.shapeAlign==='right'?'justify-content:flex-end':'justify-content:flex-start';
+        const shapeItems = (q.shapes||[]).map(sh => `<div style="display:flex;flex-direction:column;align-items:center;gap:4px">${shapeSVG(sh,sz)}${q.shapeNameLine?`<div style="width:${sz}px;border-bottom:1.5px solid #333;margin-top:6px"></div>`:''}</div>`).join('');
+        shapesBlock = `<div class="shapes-row" style="${alignStyle};margin-bottom:10px">${shapeItems}</div>`;
+      }
       let answerHtml = '';
       if (q.type === 'english') {
-        answerHtml = engLines(q.writtenCount || 6);
+        answerHtml = tableBlock + shapesBlock + engLines(q.writtenCount || 6);
       } else if (q.type === 'urdu') {
-        answerHtml = urduLines(q.urduCount || 6);
+        answerHtml = tableBlock + shapesBlock + urduLines(q.urduCount || 6);
       } else if (q.type === 'short') {
-        answerHtml = engLines(2);
+        answerHtml = tableBlock + shapesBlock + engLines(q.shortCount || 2);
       } else if (q.type === 'narrow') {
-        answerHtml = Array(q.narrowCount || 6).fill(`<div class="line-narrow"></div>`).join('');
+        answerHtml = tableBlock + shapesBlock + Array(q.narrowCount || 6).fill(`<div class="line-narrow"></div>`).join('');
       } else if (q.type === 'math') {
         const rows = q.mathRows || 2; const cols = q.mathCols || 4;
-        answerHtml = `<div class="math-grid">${Array(rows).fill(Array(cols).fill(`<div class="math-box"></div>`).join('')).map(r=>`<div class="math-row">${r}</div>`).join('')}</div>`;
+        answerHtml = tableBlock + shapesBlock + `<div class="math-grid">${Array(rows).fill(Array(cols).fill(`<div class="math-box"></div>`).join('')).map(r=>`<div class="math-row">${r}</div>`).join('')}</div>`;
       } else if (q.type === 'shapes') {
-        answerHtml = `<div class="shapes-row">${(q.shapes||[]).map(sh => shapeSVG(sh, 77)).join('')}</div>${engLines(3)}`;
+        answerHtml = tableBlock + shapesBlock + (Number(q.shapesLineCount)>0 ? engLines(q.shapesLineCount) : '');
+      } else if (q.type === 'table') {
+        answerHtml = tableBlock + shapesBlock;
       }
       return `${sectionHtml}<div class="question"><div class="q-row"><span class="q-num">Q${qNum}.</span><span class="q-text">${q.text || '(No question text)'}</span><span class="q-marks">[${q.marks} mark${q.marks!=1?'s':''}]</span></div><div class="q-answer">${answerHtml}</div></div>`;
     }).join('');
@@ -5053,24 +5080,23 @@ function Exams() {
       .q-text{flex:1;font-size:11.5pt}
       .q-marks{font-size:9pt;color:#666;white-space:nowrap;font-weight:600}
       .q-answer{margin-left:36px}
-      /* Notebook English lines */
-      .nb-english{border:1.5px solid #c084fc;position:relative;padding-left:0.75in;margin:4px 0;background:#fff}
-      .nb-english::before{content:'';position:absolute;left:0.72in;top:0;bottom:0;border-left:1.5px solid #ef4444}
-      .nb-redline-top{height:0.36in;border-bottom:1.5px solid #ef4444}
-      .nb-line{height:0.30in;border-bottom:1px solid #93c5fd}
-      .nb-redline{border-bottom:1.5px solid #fca5a5 !important}
-      .nb-blueline{border-bottom:1px solid #93c5fd}
-      /* Notebook Urdu lines (wider spacing, right margin) */
-      .nb-urdu{border:1.5px solid #c084fc;position:relative;padding-right:0.75in;margin:4px 0;background:#fff;direction:rtl}
-      .nb-urdu::before{content:'';position:absolute;right:0.72in;top:0;bottom:0;border-right:1.5px solid #ef4444}
-      .nb-line-urdu{height:0.38in;border-bottom:1px solid #93c5fd}
+      /* English 4-line groups — plain black */
+      .eng-plain{background:#fff;margin:4px 0}
+      .eng-group{margin-bottom:0.28in}
+      .eng-4line{height:0.16in;border-bottom:1.5px solid #333}
+      /* Urdu plain lines — simple ruled paper */
+      .urdu-plain{background:#fff;margin:4px 0}
+      .urdu-plain-line{height:0.60in;border-bottom:1.5px solid #555;width:100%}
       /* Narrow lines */
       .line-narrow{border-bottom:1px solid #bbb;height:${narrowH};width:100%;margin-bottom:1px}
       .math-row{display:flex;gap:0;margin-bottom:0}
       .math-box{width:${BOX}in;height:${BOX}in;border:1.5px solid #888;display:inline-block}
       .math-grid{display:inline-block;border-top:1.5px solid #888;border-left:1.5px solid #888}
       .math-grid .math-box{border-top:none;border-left:none}
-      .shapes-row{display:flex;gap:20px;flex-wrap:wrap;margin:6px 0}
+      .shapes-row{display:flex;gap:24px;flex-wrap:wrap;margin:6px 0;align-items:flex-end}
+      .q-table{width:100%;border-collapse:collapse;margin:6px 0}
+      .q-table th{background:#1e3a8a;color:#fff;padding:7px 10px;font-size:10.5pt;border:1.5px solid #333;text-align:center;font-weight:700}
+      .q-table td{border:1.5px solid #333;padding:4px 8px;vertical-align:top}
       .shapes-row svg{display:block}
       .sig{display:flex;justify-content:space-between;align-items:flex-end;margin-top:48px;font-size:10pt}
       .sig-item{text-align:center;min-width:1.8in}
@@ -5539,117 +5565,246 @@ function Exams() {
                           <select value={q.type} onChange={e=>updateQ(q.id,'type',e.target.value)} className={inputCls}>
                             <option value="english">🇬🇧 English Lines</option>
                             <option value="urdu">اردو Urdu Lines</option>
-                            <option value="short">✏️ Short (2 lines)</option>
+                            <option value="short">✏️ Short Answer</option>
                             <option value="narrow">〰️ Narrow Lines</option>
                             <option value="math">➕ Math Boxes</option>
                             <option value="shapes">🔵 Shapes</option>
+                            <option value="table">📊 Table</option>
                           </select>
                         </div>
                         <div>
                           <label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Marks</label>
                           <input type="number" min="1" value={q.marks} onChange={e=>updateQ(q.id,'marks',Number(e.target.value))} className={inputCls}/>
                         </div>
-                        {(q.type==='english') && (
+                        {q.type==='english' && (
                           <div>
                             <label className="text-xs font-semibold text-gray-500 uppercase block mb-1">No. of Lines</label>
-                            <input type="number" min="2" max="30" value={q.writtenCount||6} onChange={e=>updateQ(q.id,'writtenCount',Number(e.target.value))} className={inputCls}/>
+                            <input type="number" min="1" max="30" value={q.writtenCount} onChange={e=>updateQ(q.id,'writtenCount',e.target.value)} placeholder="e.g. 6" className={inputCls}/>
                           </div>
                         )}
-                        {(q.type==='urdu') && (
+                        {q.type==='urdu' && (
                           <div>
                             <label className="text-xs font-semibold text-gray-500 uppercase block mb-1">No. of Lines</label>
-                            <input type="number" min="2" max="30" value={q.urduCount||6} onChange={e=>updateQ(q.id,'urduCount',Number(e.target.value))} className={inputCls}/>
+                            <input type="number" min="1" max="30" value={q.urduCount} onChange={e=>updateQ(q.id,'urduCount',e.target.value)} placeholder="e.g. 6" className={inputCls}/>
+                          </div>
+                        )}
+                        {q.type==='short' && (
+                          <div>
+                            <label className="text-xs font-semibold text-gray-500 uppercase block mb-1">No. of Lines</label>
+                            <input type="number" min="1" max="30" value={q.shortCount} onChange={e=>updateQ(q.id,'shortCount',e.target.value)} placeholder="e.g. 2" className={inputCls}/>
                           </div>
                         )}
                         {q.type==='narrow' && (
                           <div>
                             <label className="text-xs font-semibold text-gray-500 uppercase block mb-1">No. of Lines</label>
-                            <input type="number" min="2" max="30" value={q.narrowCount||6} onChange={e=>updateQ(q.id,'narrowCount',Number(e.target.value))} className={inputCls}/>
+                            <input type="number" min="1" max="30" value={q.narrowCount} onChange={e=>updateQ(q.id,'narrowCount',e.target.value)} placeholder="e.g. 6" className={inputCls}/>
                           </div>
                         )}
                         {q.type==='math' && (
                           <>
                             <div>
                               <label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Rows</label>
-                              <input type="number" min="1" max="8" value={q.mathRows} onChange={e=>updateQ(q.id,'mathRows',Number(e.target.value))} className={inputCls}/>
+                              <input type="number" min="1" max="8" value={q.mathRows} onChange={e=>updateQ(q.id,'mathRows',e.target.value)} placeholder="e.g. 2" className={inputCls}/>
                             </div>
                             <div>
                               <label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Columns</label>
-                              <input type="number" min="1" max="12" value={q.mathCols} onChange={e=>updateQ(q.id,'mathCols',Number(e.target.value))} className={inputCls}/>
+                              <input type="number" min="1" max="12" value={q.mathCols} onChange={e=>updateQ(q.id,'mathCols',e.target.value)} placeholder="e.g. 4" className={inputCls}/>
+                            </div>
+                          </>
+                        )}
+                        {q.type==='shapes' && (
+                          <div>
+                            <label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Lines Below</label>
+                            <input type="number" min="0" max="10" value={q.shapesLineCount} onChange={e=>updateQ(q.id,'shapesLineCount',e.target.value)} placeholder="e.g. 3" className={inputCls}/>
+                          </div>
+                        )}
+                        {q.type==='table' && (
+                          <>
+                            <div>
+                              <label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Rows</label>
+                              <input type="number" min="1" max="30" value={q.tableRows||5} onChange={e=>updateQ(q.id,'tableRows',Number(e.target.value))} placeholder="e.g. 5" className={inputCls}/>
+                            </div>
+                            <div>
+                              <label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Row Height</label>
+                              <select value={q.tableRowHeight||'0.45in'} onChange={e=>updateQ(q.id,'tableRowHeight',e.target.value)} className={inputCls}>
+                                <option value="0.30in">Narrow</option>
+                                <option value="0.45in">Normal</option>
+                                <option value="0.60in">Wide</option>
+                                <option value="0.80in">Extra Wide</option>
+                              </select>
                             </div>
                           </>
                         )}
                       </div>
                     </div>
 
-                    {/* Shapes selector */}
-                    {q.type==='shapes' && (
-                      <div>
-                        <label className="text-xs font-semibold text-gray-500 uppercase block mb-2">Select Shapes to show on paper:</label>
-                        <div className="flex flex-wrap gap-2">
-                          {SHAPE_LIST.map(sh => (
-                            <button key={sh} onClick={() => {
-                              const curr = q.shapes || [];
-                              const next = curr.includes(sh) ? curr.filter(s=>s!==sh) : [...curr, sh];
-                              updateQ(q.id,'shapes',next);
-                            }} className={`px-3 py-1.5 rounded-xl text-xs font-semibold border-2 transition-all ${(q.shapes||[]).includes(sh)?'border-blue-500 bg-blue-50 text-blue-700':'border-gray-200 text-gray-500 hover:border-gray-300'}`}>
-                              {sh}
-                            </button>
-                          ))}
-                        </div>
-                        {/* Preview */}
-                        {(q.shapes||[]).length > 0 && (
-                          <div className="flex gap-3 mt-3 flex-wrap p-3 bg-gray-50 rounded-xl border border-gray-100">
-                            {(q.shapes||[]).map((sh,i) => (
-                              <div key={i} dangerouslySetInnerHTML={{__html: shapeSVG(sh, 55)}}/>
-                            ))}
-                          </div>
-                        )}
+                    {/* Table toggle — for non-table types */}
+                    {q.type !== 'table' && (
+                      <div className="mt-2 flex items-center gap-2">
+                        <label className="flex items-center gap-1.5 cursor-pointer px-3 py-1.5 border-2 rounded-xl transition-all select-none
+                          border-dashed border-gray-300 hover:border-blue-400 bg-white">
+                          <input type="checkbox" checked={!!q.tableEnabled} onChange={e=>updateQ(q.id,'tableEnabled',e.target.checked)} className="w-4 h-4 accent-blue-600"/>
+                          <span className="text-xs font-bold text-gray-600">📊 Add Table to this question</span>
+                        </label>
                       </div>
                     )}
 
+                    {/* Shapes panel — available for ALL question types */}
+                    <div className="mt-3 border border-dashed border-blue-200 rounded-xl p-3 bg-blue-50/30">
+                      <div className="flex flex-wrap items-center gap-3 mb-2">
+                        <span className="text-xs font-bold text-blue-700">🔵 Add Shapes (optional)</span>
+                        {/* Size */}
+                        <div className="flex items-center gap-1.5">
+                          <label className="text-xs font-semibold text-gray-500">Size:</label>
+                          <input type="number" min="30" max="300" value={q.shapeSize||80}
+                            onChange={e=>updateQ(q.id,'shapeSize',Number(e.target.value))}
+                            className="border border-gray-200 rounded-lg px-2 py-1 text-xs w-16 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"/>
+                          <span className="text-xs text-gray-400">px</span>
+                        </div>
+                        {/* Name line toggle */}
+                        <label className="flex items-center gap-1.5 cursor-pointer">
+                          <input type="checkbox" checked={!!q.shapeNameLine} onChange={e=>updateQ(q.id,'shapeNameLine',e.target.checked)} className="w-4 h-4 accent-blue-600"/>
+                          <span className="text-xs font-semibold text-gray-600">Name Line</span>
+                        </label>
+                        {/* Alignment */}
+                        <div className="flex items-center gap-1">
+                          <span className="text-xs text-gray-500 mr-1">Align:</span>
+                          {[['left','⬅'],['center','↔'],['right','➡']].map(([a,icon])=>(
+                            <button key={a} onClick={()=>updateQ(q.id,'shapeAlign',a)}
+                              className={`px-2 py-0.5 rounded text-xs font-bold border transition-all ${q.shapeAlign===a?'bg-blue-600 text-white border-blue-600':'bg-white border-gray-200 text-gray-500 hover:border-gray-400'}`}>
+                              {icon}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      {/* Shape toggle buttons */}
+                      <div className="flex flex-wrap gap-1.5 mb-2">
+                        {SHAPE_LIST.map(sh => (
+                          <button key={sh} onClick={() => {
+                            const curr = q.shapes || [];
+                            const next = curr.includes(sh) ? curr.filter(s=>s!==sh) : [...curr, sh];
+                            updateQ(q.id,'shapes',next);
+                          }} className={`px-2.5 py-1 rounded-lg text-xs font-semibold border-2 transition-all ${(q.shapes||[]).includes(sh)?'border-blue-500 bg-blue-100 text-blue-700':'border-gray-200 bg-white text-gray-500 hover:border-gray-300'}`}>
+                            {sh}
+                          </button>
+                        ))}
+                      </div>
+                      {/* Shape preview */}
+                      {(q.shapes||[]).length > 0 && (
+                        <div className={`flex gap-4 flex-wrap p-3 bg-white rounded-lg border border-gray-100 ${q.shapeAlign==='center'?'justify-center':q.shapeAlign==='right'?'justify-end':'justify-start'}`}>
+                          {(q.shapes||[]).map((sh,i) => (
+                            <div key={i} className="flex flex-col items-center gap-1">
+                              <div dangerouslySetInnerHTML={{__html: shapeSVG(sh, q.shapeSize||80)}}/>
+                              {q.shapeNameLine && <div style={{width:`${q.shapeSize||80}px`,borderBottom:'1.5px solid #333',marginTop:'4px'}}/>}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
                     {/* Preview answer space */}
-                    {q.type==='english' && (
-                      <div className="mt-2 border-2 border-purple-300 pl-8 relative overflow-hidden" style={{borderLeft:'1.5px solid #c084fc'}}>
-                        <div className="absolute left-7 top-0 bottom-0 border-l-2 border-red-400"/>
-                        <div className="border-b-2 border-red-300 h-6"/>
-                        {Array(Math.min(q.writtenCount||6,8)).fill(0).map((_,i)=>(
-                          <div key={i} className={`h-6 ${i%3===0&&i>0?'border-b-2 border-red-200':'border-b border-blue-300'}`}/>
+                    {q.type==='english' && Number(q.writtenCount)>0 && (
+                      <div className="mt-2 bg-white">
+                        {Array(Math.min(Number(q.writtenCount),6)).fill(0).map((_,g)=>(
+                          <div key={g} style={{marginBottom:'18px'}}>
+                            {[0,1,2,3].map(i=>(
+                              <div key={i} style={{height:'12px',borderBottom:'1.5px solid #333',width:'100%'}}/>
+                            ))}
+                          </div>
                         ))}
                       </div>
                     )}
-                    {q.type==='urdu' && (
-                      <div className="mt-2 border-2 border-purple-300 pr-8 relative overflow-hidden text-right">
-                        <div className="absolute right-7 top-0 bottom-0 border-r-2 border-red-400"/>
-                        <div className="border-b-2 border-red-300 h-7"/>
-                        {Array(Math.min(q.urduCount||6,8)).fill(0).map((_,i)=>(
-                          <div key={i} className={`h-7 ${i%3===0&&i>0?'border-b-2 border-red-200':'border-b border-blue-300'}`}/>
+                    {q.type==='urdu' && Number(q.urduCount)>0 && (
+                      <div className="mt-2 bg-white">
+                        {Array(Math.min(Number(q.urduCount),8)).fill(0).map((_,i)=>(
+                          <div key={i} style={{height:'46px',borderBottom:'1.5px solid #555',width:'100%'}}/>
                         ))}
                       </div>
                     )}
-                    {q.type==='short' && (
-                      <div className="mt-2 border-2 border-purple-300 pl-8 relative">
-                        <div className="absolute left-7 top-0 bottom-0 border-l-2 border-red-400"/>
-                        <div className="border-b-2 border-red-300 h-6"/>
-                        <div className="border-b border-blue-300 h-6"/>
-                        <div className="border-b border-blue-300 h-6"/>
+                    {q.type==='short' && Number(q.shortCount)>0 && (
+                      <div className="mt-2 bg-white">
+                        {Array(Math.min(Number(q.shortCount),6)).fill(0).map((_,g)=>(
+                          <div key={g} style={{marginBottom:'18px'}}>
+                            {[0,1,2,3].map(i=>(
+                              <div key={i} style={{height:'12px',borderBottom:'1.5px solid #333',width:'100%'}}/>
+                            ))}
+                          </div>
+                        ))}
                       </div>
                     )}
-                    {q.type==='narrow' && (
+                    {q.type==='narrow' && Number(q.narrowCount)>0 && (
                       <div className="mt-2 space-y-0.5 opacity-40">
-                        {Array(q.narrowCount||6).fill(0).map((_,i)=><div key={i} className="border-b border-gray-400 h-4 w-full"/>)}
+                        {Array(Math.min(Number(q.narrowCount),12)).fill(0).map((_,i)=><div key={i} className="border-b border-gray-400 h-4 w-full"/>)}
                       </div>
                     )}
-                    {q.type==='math' && (
+                    {q.type==='math' && Number(q.mathRows)>0 && Number(q.mathCols)>0 && (
                       <div className="mt-2 opacity-50 overflow-x-auto">
                         <div style={{display:'inline-block',borderTop:'2px solid #888',borderLeft:'2px solid #888'}}>
-                          {Array(q.mathRows||2).fill(0).map((_,r)=>(
+                          {Array(Number(q.mathRows)).fill(0).map((_,r)=>(
                             <div key={r} style={{display:'flex'}}>
-                              {Array(q.mathCols||4).fill(0).map((_,c)=>(
+                              {Array(Number(q.mathCols)).fill(0).map((_,c)=>(
                                 <div key={c} style={{width:'58px',height:'58px',borderRight:'2px solid #888',borderBottom:'2px solid #888'}}/>
                               ))}
                             </div>
                           ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Table editor — available for ALL question types */}
+                    {(q.type==='table' || q.tableEnabled) && (
+                      <div className="mt-3 border border-gray-200 rounded-xl overflow-hidden">
+                        {/* Table toolbar */}
+                        <div className="flex flex-wrap items-center gap-2 p-2 bg-gray-50 border-b border-gray-200">
+                          <span className="text-xs font-bold text-gray-600">📊 Table Editor</span>
+                          <button onClick={()=>updateQ(q.id,'tableColumns',[...(q.tableColumns||[]),{header:''}])}
+                            className="px-2 py-1 text-xs bg-blue-600 text-white rounded font-semibold hover:bg-blue-700">+ Col</button>
+                          {(q.tableColumns||[]).length>1 && (
+                            <button onClick={()=>updateQ(q.id,'tableColumns',(q.tableColumns||[]).slice(0,-1))}
+                              className="px-2 py-1 text-xs bg-red-100 text-red-600 rounded font-semibold hover:bg-red-200">− Col</button>
+                          )}
+                          <div className="flex items-center gap-1 ml-1">
+                            <span className="text-xs text-gray-500">Dir:</span>
+                            {['ltr','rtl'].map(d=>(
+                              <button key={d} onClick={()=>updateQ(q.id,'tableDir',d)}
+                                className={`px-2 py-0.5 text-xs rounded font-bold border ${q.tableDir===d?'bg-blue-600 text-white border-blue-600':'bg-white border-gray-300 text-gray-500'}`}>
+                                {d==='ltr'?'LTR →':'RTL ←'}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        {/* Table grid */}
+                        <div className="overflow-x-auto p-2">
+                          <table style={{width:'100%',borderCollapse:'collapse',direction:q.tableDir||'ltr'}}>
+                            <thead>
+                              <tr>
+                                {(q.tableColumns||[{header:''},{header:''}]).map((col,ci)=>(
+                                  <th key={ci} style={{border:'1.5px solid #334155',background:'#1e3a8a',color:'#fff',padding:'4px 6px'}}>
+                                    <input value={col.header} onChange={e=>{
+                                      const cols=(q.tableColumns||[]).map((c,i)=>i===ci?{...c,header:e.target.value}:c);
+                                      updateQ(q.id,'tableColumns',cols);
+                                    }} placeholder={`Header ${ci+1}`}
+                                    className="w-full bg-transparent text-white text-xs text-center outline-none placeholder-blue-300 font-bold"/>
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {Array(Number(q.tableRows)||5).fill(0).map((_,ri)=>(
+                                <tr key={ri}>
+                                  {(q.tableColumns||[{header:''},{header:''}]).map((col,ci)=>(
+                                    <td key={ci} style={{border:'1.5px solid #334155',padding:'2px 4px',minHeight:'32px'}}>
+                                      <input value={(q.tableData||{})[`${ri}_${ci}`]||''} onChange={e=>{
+                                        updateQ(q.id,'tableData',{...(q.tableData||{}),[`${ri}_${ci}`]:e.target.value});
+                                      }} placeholder="(empty = student writes)"
+                                      className="w-full text-xs px-1 outline-none" style={{direction:q.tableDir||'ltr'}}/>
+                                    </td>
+                                  ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                          <p className="text-xs text-gray-400 mt-1">💡 Leave cells empty for students to fill. Type content to pre-fill (e.g. words/questions).</p>
                         </div>
                       </div>
                     )}
@@ -5659,7 +5814,8 @@ function Exams() {
           }
 
           {paperQs.length > 0 && (
-            <div className="mt-4 flex justify-end">
+            <div className="mt-4 flex justify-between items-center">
+              <Btn onClick={addQ}>+ Add Question</Btn>
               <Btn onClick={printPaper}>🖨️ Print Question Paper</Btn>
             </div>
           )}
