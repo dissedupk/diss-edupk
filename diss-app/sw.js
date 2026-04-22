@@ -1,5 +1,5 @@
-// ── DISS School System — Service Worker v3 ───────────────────────────────────
-const CACHE = 'diss-school-v3'; // bumped to clear old broken cache
+// ── DISS School System — Service Worker v4 ───────────────────────────────────
+const CACHE = 'diss-school-v4'; // bumped to force clear all old caches
 
 const STATIC_ASSETS = [
   'https://unpkg.com/react@18/umd/react.production.min.js',
