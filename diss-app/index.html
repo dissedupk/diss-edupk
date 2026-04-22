@@ -4976,7 +4976,7 @@ function Exams() {
   // ── Paper Tab State ──
   const [paperSettings, setPaperSettings] = useState({ cls: CLASSES[0], subject:'English', term:'Term 1', year: NOW.getFullYear(), date:'', totalMarks:100, time:'2 Hours', instructions:'Attempt all questions.' });
   const [paperQs, setPaperQs] = useState([]);
-  const blankQ = () => ({ id: uid(), section:'', type:'written', text:'', marks:5, shapes:[], narrowCount:6, mathRows:2, mathCols:4 });
+  const blankQ = () => ({ id: uid(), section:'', type:'english', text:'', marks:5, shapes:[], narrowCount:6, writtenCount:6, urduCount:6, mathRows:2, mathCols:4 });
   const addQ   = () => setPaperQs(prev => [...prev, blankQ()]);
   const removeQ = (id) => setPaperQs(prev => prev.filter(q => q.id !== id));
   const updateQ = (id, field, val) => setPaperQs(prev => prev.map(q => q.id===id ? {...q, [field]: val} : q));
@@ -5000,18 +5000,35 @@ function Exams() {
       qNum++;
       let sectionHtml = '';
       if (q.section && q.section !== sectCurrent) { sectCurrent = q.section; sectionHtml = `<div class="section-hdr">${q.section}</div>`; }
+      // notebook line generators
+      const engLines = (count) => {
+        let html = '<div class="nb-english">';
+        html += '<div class="nb-redline-top"></div>';
+        for(let i=0;i<(count||6);i++) html += `<div class="nb-line ${i%3===0&&i>0?'nb-redline':'nb-blueline'}"></div>`;
+        html += '</div>';
+        return html;
+      };
+      const urduLines = (count) => {
+        let html = '<div class="nb-urdu">';
+        html += '<div class="nb-redline-top"></div>';
+        for(let i=0;i<(count||6);i++) html += `<div class="nb-line-urdu ${i%3===0&&i>0?'nb-redline':'nb-blueline'}"></div>`;
+        html += '</div>';
+        return html;
+      };
       let answerHtml = '';
-      if (q.type === 'written') {
-        answerHtml = Array(4).fill(`<div class="line-wide"></div>`).join('');
+      if (q.type === 'english') {
+        answerHtml = engLines(q.writtenCount || 6);
+      } else if (q.type === 'urdu') {
+        answerHtml = urduLines(q.urduCount || 6);
       } else if (q.type === 'short') {
-        answerHtml = `<div class="line-wide"></div>`;
+        answerHtml = engLines(2);
       } else if (q.type === 'narrow') {
         answerHtml = Array(q.narrowCount || 6).fill(`<div class="line-narrow"></div>`).join('');
       } else if (q.type === 'math') {
         const rows = q.mathRows || 2; const cols = q.mathCols || 4;
         answerHtml = `<div class="math-grid">${Array(rows).fill(Array(cols).fill(`<div class="math-box"></div>`).join('')).map(r=>`<div class="math-row">${r}</div>`).join('')}</div>`;
       } else if (q.type === 'shapes') {
-        answerHtml = `<div class="shapes-row">${(q.shapes||[]).map(sh => shapeSVG(sh, 77)).join('')}</div><div class="line-wide" style="margin-top:8px"></div>`;
+        answerHtml = `<div class="shapes-row">${(q.shapes||[]).map(sh => shapeSVG(sh, 77)).join('')}</div>${engLines(3)}`;
       }
       return `${sectionHtml}<div class="question"><div class="q-row"><span class="q-num">Q${qNum}.</span><span class="q-text">${q.text || '(No question text)'}</span><span class="q-marks">[${q.marks} mark${q.marks!=1?'s':''}]</span></div><div class="q-answer">${answerHtml}</div></div>`;
     }).join('');
@@ -5036,7 +5053,18 @@ function Exams() {
       .q-text{flex:1;font-size:11.5pt}
       .q-marks{font-size:9pt;color:#666;white-space:nowrap;font-weight:600}
       .q-answer{margin-left:36px}
-      .line-wide{border-bottom:1px solid #aaa;height:${lineH};width:100%;margin-bottom:2px}
+      /* Notebook English lines */
+      .nb-english{border:1.5px solid #c084fc;position:relative;padding-left:0.75in;margin:4px 0;background:#fff}
+      .nb-english::before{content:'';position:absolute;left:0.72in;top:0;bottom:0;border-left:1.5px solid #ef4444}
+      .nb-redline-top{height:0.36in;border-bottom:1.5px solid #ef4444}
+      .nb-line{height:0.30in;border-bottom:1px solid #93c5fd}
+      .nb-redline{border-bottom:1.5px solid #fca5a5 !important}
+      .nb-blueline{border-bottom:1px solid #93c5fd}
+      /* Notebook Urdu lines (wider spacing, right margin) */
+      .nb-urdu{border:1.5px solid #c084fc;position:relative;padding-right:0.75in;margin:4px 0;background:#fff;direction:rtl}
+      .nb-urdu::before{content:'';position:absolute;right:0.72in;top:0;bottom:0;border-right:1.5px solid #ef4444}
+      .nb-line-urdu{height:0.38in;border-bottom:1px solid #93c5fd}
+      /* Narrow lines */
       .line-narrow{border-bottom:1px solid #bbb;height:${narrowH};width:100%;margin-bottom:1px}
       .math-row{display:flex;gap:0;margin-bottom:0}
       .math-box{width:${BOX}in;height:${BOX}in;border:1.5px solid #888;display:inline-block}
@@ -5497,8 +5525,9 @@ function Exams() {
                         <div>
                           <label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Answer Type</label>
                           <select value={q.type} onChange={e=>updateQ(q.id,'type',e.target.value)} className={inputCls}>
-                            <option value="written">✍️ Written (4 lines)</option>
-                            <option value="short">✏️ Short (1 line)</option>
+                            <option value="english">🇬🇧 English Lines</option>
+                            <option value="urdu">اردو Urdu Lines</option>
+                            <option value="short">✏️ Short (2 lines)</option>
                             <option value="narrow">〰️ Narrow Lines</option>
                             <option value="math">➕ Math Boxes</option>
                             <option value="shapes">🔵 Shapes</option>
@@ -5508,10 +5537,22 @@ function Exams() {
                           <label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Marks</label>
                           <input type="number" min="1" value={q.marks} onChange={e=>updateQ(q.id,'marks',Number(e.target.value))} className={inputCls}/>
                         </div>
+                        {(q.type==='english') && (
+                          <div>
+                            <label className="text-xs font-semibold text-gray-500 uppercase block mb-1">No. of Lines</label>
+                            <input type="number" min="2" max="30" value={q.writtenCount||6} onChange={e=>updateQ(q.id,'writtenCount',Number(e.target.value))} className={inputCls}/>
+                          </div>
+                        )}
+                        {(q.type==='urdu') && (
+                          <div>
+                            <label className="text-xs font-semibold text-gray-500 uppercase block mb-1">No. of Lines</label>
+                            <input type="number" min="2" max="30" value={q.urduCount||6} onChange={e=>updateQ(q.id,'urduCount',Number(e.target.value))} className={inputCls}/>
+                          </div>
+                        )}
                         {q.type==='narrow' && (
                           <div>
                             <label className="text-xs font-semibold text-gray-500 uppercase block mb-1">No. of Lines</label>
-                            <input type="number" min="2" max="20" value={q.narrowCount} onChange={e=>updateQ(q.id,'narrowCount',Number(e.target.value))} className={inputCls}/>
+                            <input type="number" min="2" max="30" value={q.narrowCount||6} onChange={e=>updateQ(q.id,'narrowCount',Number(e.target.value))} className={inputCls}/>
                           </div>
                         )}
                         {q.type==='math' && (
@@ -5556,12 +5597,32 @@ function Exams() {
                     )}
 
                     {/* Preview answer space */}
-                    {q.type==='written' && (
-                      <div className="mt-2 space-y-1 opacity-40">
-                        {[1,2,3,4].map(i=><div key={i} className="border-b border-gray-400 h-6 w-full"/>)}
+                    {q.type==='english' && (
+                      <div className="mt-2 border-2 border-purple-300 pl-8 relative overflow-hidden" style={{borderLeft:'1.5px solid #c084fc'}}>
+                        <div className="absolute left-7 top-0 bottom-0 border-l-2 border-red-400"/>
+                        <div className="border-b-2 border-red-300 h-6"/>
+                        {Array(Math.min(q.writtenCount||6,8)).fill(0).map((_,i)=>(
+                          <div key={i} className={`h-6 ${i%3===0&&i>0?'border-b-2 border-red-200':'border-b border-blue-300'}`}/>
+                        ))}
                       </div>
                     )}
-                    {q.type==='short' && <div className="mt-2 border-b border-gray-400 h-6 w-full opacity-40"/>}
+                    {q.type==='urdu' && (
+                      <div className="mt-2 border-2 border-purple-300 pr-8 relative overflow-hidden text-right">
+                        <div className="absolute right-7 top-0 bottom-0 border-r-2 border-red-400"/>
+                        <div className="border-b-2 border-red-300 h-7"/>
+                        {Array(Math.min(q.urduCount||6,8)).fill(0).map((_,i)=>(
+                          <div key={i} className={`h-7 ${i%3===0&&i>0?'border-b-2 border-red-200':'border-b border-blue-300'}`}/>
+                        ))}
+                      </div>
+                    )}
+                    {q.type==='short' && (
+                      <div className="mt-2 border-2 border-purple-300 pl-8 relative">
+                        <div className="absolute left-7 top-0 bottom-0 border-l-2 border-red-400"/>
+                        <div className="border-b-2 border-red-300 h-6"/>
+                        <div className="border-b border-blue-300 h-6"/>
+                        <div className="border-b border-blue-300 h-6"/>
+                      </div>
+                    )}
                     {q.type==='narrow' && (
                       <div className="mt-2 space-y-0.5 opacity-40">
                         {Array(q.narrowCount||6).fill(0).map((_,i)=><div key={i} className="border-b border-gray-400 h-4 w-full"/>)}
