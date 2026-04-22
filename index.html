@@ -1831,21 +1831,31 @@ function FeeCollection() {
     }), [students, search, fcls]);
 
   // Discount applies to CLASS FEE → student net fee = classFee - discount
-  // Amount received is separate — balance = studentNetFee - amountReceived
-  const classDueForModal = () => Number(classFees[collMod?.stu?.cls] || 0);
-  const studentNetFee    = () => Math.max(0, classDueForModal() - Number(cf.discount||0));
-  const netPayable       = () => Number(cf.feeAmount || 0); // actual money being collected now
+  // Opening balance = prior dues, added on top of monthly net fee
+  // Total real due = studentNetFee + openingBalance
+  // Balance = totalRealDue - amountAlreadyPaid
+  const classDueForModal  = () => Number(classFees[collMod?.stu?.cls] || 0);
+  const openingBalModal   = () => Number(collMod?.stu?.openingBalance || 0);
+  const studentNetFee     = () => Math.max(0, classDueForModal() - Number(cf.discount||0));
+  const totalRealDue      = () => studentNetFee() + openingBalModal();
+  const alreadyPaidModal  = () => Number(collMod?.alreadyPaid || 0);
+  const realTimeBalance   = () => Math.max(0, totalRealDue() - alreadyPaidModal());
+  const netPayable        = () => Number(cf.feeAmount || 0); // actual money being collected now
 
   const openCollect = (stu) => {
     const due         = Number(classFees[stu.cls] || 0);
+    const openingBal  = Number(stu.openingBalance || 0);
     const alreadyPaid = paidMap[stu.id]?.total || 0;
-    const balance     = Math.max(0, due - alreadyPaid);
-    setCollMod({ stu, alreadyPaid, balance });
-    // Auto-calculate discount: if student has a personal rate (annualFund) less than class fee
-    const stuRate    = Number(stu.annualFund || 0);
-    const autoDisc   = stuRate > 0 && stuRate < due ? due - stuRate : 0;
-    const autoAmount = autoDisc > 0 ? stuRate : (balance || due);
-    setCf({ month: vm, year: vy, feeAmount: String(autoAmount), discount: autoDisc > 0 ? String(autoDisc) : '', annualFund: '0', note: '', paymentMethod: 'Cash' });
+    // Auto discount from annualFund rate
+    const stuRate     = Number(stu.annualFund || 0);
+    const autoDisc    = stuRate > 0 && stuRate < due ? due - stuRate : 0;
+    const netMonthly  = Math.max(0, due - autoDisc); // student's monthly net fee
+    const totalDue    = netMonthly + openingBal;      // total owed including prior balance
+    const balance     = Math.max(0, totalDue - alreadyPaid);
+    setCollMod({ stu, alreadyPaid, balance, openingBal, totalDue });
+    // Auto-fill amount = remaining balance (includes opening balance)
+    const autoAmount  = autoDisc > 0 ? String(netMonthly) : String(balance || due);
+    setCf({ month: vm, year: vy, feeAmount: autoAmount, discount: autoDisc > 0 ? String(autoDisc) : '', annualFund: '0', note: '', paymentMethod: 'Cash' });
   };
 
   const collectFee = () => {
@@ -2596,12 +2606,21 @@ function FeeCollection() {
                 📂 Opening Balance (prev dues): <strong>Rs. {Number(collMod.stu.openingBalance).toLocaleString()}</strong>
               </div>
             )}
-            {collMod.alreadyPaid > 0 && (
-              <div className="flex gap-4 mt-2 text-sm">
-                <span className="text-gray-600">Already Paid: <strong className="text-emerald-700">Rs. {collMod.alreadyPaid.toLocaleString()}</strong></span>
-                <span className="text-gray-600">Balance Due: <strong className="text-red-600">Rs. {collMod.balance.toLocaleString()}</strong></span>
+            <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+              <div className="bg-white rounded-lg px-3 py-1.5">
+                <span className="text-gray-400 text-xs block">Total Due</span>
+                <strong className="text-blue-700">Rs. {(collMod.totalDue||collMod.balance).toLocaleString()}</strong>
+                {collMod.openingBal > 0 && <span className="text-xs text-amber-500 block">incl. prev Rs. {collMod.openingBal.toLocaleString()}</span>}
               </div>
-            )}
+              <div className="bg-white rounded-lg px-3 py-1.5">
+                <span className="text-gray-400 text-xs block">{collMod.alreadyPaid > 0 ? 'Paid This Month' : 'Paid'}</span>
+                <strong className="text-emerald-700">Rs. {collMod.alreadyPaid.toLocaleString()}</strong>
+              </div>
+              <div className="bg-white rounded-lg px-3 py-1.5 col-span-2">
+                <span className="text-gray-400 text-xs block">Balance Remaining</span>
+                <strong className={collMod.balance > 0 ? 'text-red-600' : 'text-emerald-700'}>Rs. {collMod.balance.toLocaleString()}</strong>
+              </div>
+            </div>
           </div>
           <div className="flex gap-2 mb-1">
             <div className="flex-1">
@@ -2617,20 +2636,26 @@ function FeeCollection() {
             onChange={e => setCf({...cf, feeAmount: e.target.value})} placeholder="Enter amount received now"/>
           <Inp label="Discount (Rs.)" type="number" min="0" value={cf.discount}
             onChange={e => setCf({...cf, discount: e.target.value})} placeholder="0 if no discount"/>
-          {Number(cf.discount) > 0 && (() => {
+          {(Number(cf.discount) > 0 || openingBalModal() > 0) && (() => {
             const due2      = classDueForModal();
             const disc2     = Number(cf.discount || 0);
-            const netFee2   = studentNetFee();
-            const received2 = Number(cf.feeAmount || 0);
-            const bal2      = netFee2 - received2;
+            const netFee2   = studentNetFee();           // class fee − discount
+            const obBal     = openingBalModal();          // prior dues
+            const totalDue2 = netFee2 + obBal;           // total owed
+            const paid2     = alreadyPaidModal();         // already paid this month
+            const received2 = Number(cf.feeAmount || 0); // receiving now
+            const bal2      = totalDue2 - paid2 - received2; // balance after this payment
             return (
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-3 text-sm">
                 <div className="flex justify-between text-gray-600 mb-1"><span>Class Fee:</span><span className="font-semibold">Rs. {due2.toLocaleString()}</span></div>
-                <div className="flex justify-between text-red-600 mb-1"><span>Discount:</span><span className="font-semibold">− Rs. {disc2.toLocaleString()}</span></div>
-                <div className="flex justify-between text-blue-700 font-bold border-t border-amber-200 pt-1 mb-1"><span>Student Net Fee:</span><span>Rs. {netFee2.toLocaleString()}</span></div>
-                {received2 > 0 && <div className="flex justify-between text-gray-600 mb-1"><span>Receiving Now:</span><span className="font-semibold">Rs. {received2.toLocaleString()}</span></div>}
-                {received2 > 0 && <div className={`flex justify-between font-bold border-t border-amber-200 pt-1 ${bal2 > 0 ? 'text-red-600' : bal2 < 0 ? 'text-emerald-700' : 'text-gray-500'}`}>
-                  <span>{bal2 > 0 ? 'Balance Remaining:' : bal2 < 0 ? 'Advance:' : '✅ Fully Paid'}</span>
+                {disc2 > 0 && <div className="flex justify-between text-red-600 mb-1"><span>Discount:</span><span className="font-semibold">− Rs. {disc2.toLocaleString()}</span></div>}
+                {disc2 > 0 && <div className="flex justify-between text-blue-700 font-semibold mb-1"><span>Monthly Net Fee:</span><span>Rs. {netFee2.toLocaleString()}</span></div>}
+                {obBal > 0 && <div className="flex justify-between text-amber-700 font-semibold mb-1"><span>Opening Balance (prev dues):</span><span>+ Rs. {obBal.toLocaleString()}</span></div>}
+                <div className="flex justify-between text-blue-800 font-bold border-t border-amber-300 pt-1 mb-1"><span>Total Net Due:</span><span>Rs. {totalDue2.toLocaleString()}</span></div>
+                {paid2 > 0 && <div className="flex justify-between text-emerald-700 mb-1"><span>Already Paid:</span><span className="font-semibold">− Rs. {paid2.toLocaleString()}</span></div>}
+                {received2 > 0 && <div className="flex justify-between text-gray-600 mb-1"><span>Receiving Now:</span><span className="font-semibold">− Rs. {received2.toLocaleString()}</span></div>}
+                {received2 > 0 && <div className={`flex justify-between font-bold border-t border-amber-300 pt-1 ${bal2 > 0 ? 'text-red-600' : bal2 < 0 ? 'text-emerald-700' : 'text-gray-500'}`}>
+                  <span>{bal2 > 0 ? '⚠️ Balance Remaining:' : bal2 < 0 ? '✅ Advance:' : '✅ Fully Cleared'}</span>
                   <span>Rs. {Math.abs(bal2).toLocaleString()}</span>
                 </div>}
               </div>
@@ -2651,10 +2676,19 @@ function FeeCollection() {
               ))}
             </div>
           </div>
-          <div className="bg-emerald-50 rounded-xl p-3 mb-4 flex justify-between items-center">
-            <span className="font-bold text-emerald-800">Total to Collect Now:</span>
+          <div className="bg-emerald-50 rounded-xl p-3 mb-2 flex justify-between items-center">
+            <span className="font-bold text-emerald-800">Collecting Now:</span>
             <span className="text-xl font-extrabold text-emerald-700">Rs. {(netPayable() + Number(cf.annualFund||0)).toLocaleString()}</span>
           </div>
+          {(() => {
+            const remainAfter = totalRealDue() - alreadyPaidModal() - netPayable();
+            if (!collMod) return null;
+            return remainAfter > 0
+              ? <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-2 mb-3 flex justify-between text-sm"><span className="text-red-600 font-semibold">Balance after this payment:</span><span className="text-red-700 font-bold">Rs. {remainAfter.toLocaleString()} remaining</span></div>
+              : remainAfter < 0
+              ? <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2 mb-3 flex justify-between text-sm"><span className="text-emerald-600 font-semibold">After this payment:</span><span className="text-emerald-700 font-bold">Rs. {Math.abs(remainAfter).toLocaleString()} advance</span></div>
+              : <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2 mb-3 text-center text-sm text-emerald-700 font-bold">✅ Fully cleared after this payment</div>;
+          })()}
           <div className="flex gap-2">
             <Btn full variant="green" onClick={collectFee}>✅ Save & Print Receipt</Btn>
             <Btn variant="outline" onClick={() => setCollMod(null)}>Cancel</Btn>
