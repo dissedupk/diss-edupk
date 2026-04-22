@@ -5837,6 +5837,9 @@ function CashBook() {
   const [transferMod, setTransferMod] = useState(false);
   const [tf, setTf] = useState({ date: today, fromId:'', toId:'', amount:'', note:'' });
 
+  // Edit entry modal
+  const [cbEdit, setCbEdit] = useState(null);
+
   const refreshEntries = () => { setEntries(S.get(K.CBOOK, [])); setAccounts(getAccounts()); };
 
   const acctIcon = t => t==='cash'?'💵':t==='bank'?'🏦':'📱';
@@ -6242,6 +6245,7 @@ function CashBook() {
                       <th className="px-4 py-3 text-right text-emerald-600 w-28">In</th>
                       <th className="px-4 py-3 text-right text-red-500 w-28">Out</th>
                       <th className="px-4 py-3 text-right text-blue-600 w-32">Balance</th>
+                      <th className="px-4 py-3 text-right w-20">Action</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -6251,7 +6255,7 @@ function CashBook() {
                         <React.Fragment key={date}>
                           {/* Day header */}
                           <tr className="bg-blue-50 border-t-2 border-blue-200">
-                            <td colSpan="7" className="px-4 py-2 font-bold text-blue-800 text-xs tracking-wide uppercase">
+                            <td colSpan="8" className="px-4 py-2 font-bold text-blue-800 text-xs tracking-wide uppercase">
                               📅 {dateLabel}
                             </td>
                           </tr>
@@ -6260,6 +6264,7 @@ function CashBook() {
                             <td className="px-4 py-1.5 text-xs text-gray-400 italic">Opening</td>
                             <td colSpan="5" className="px-4 py-1.5 text-xs text-gray-400 italic">Balance brought forward</td>
                             <td className={`px-4 py-1.5 text-right text-xs font-bold italic ${openingBal>=0?'text-blue-600':'text-red-500'}`}>{fmtBal(openingBal)}</td>
+                            <td></td>
                           </tr>
                           {/* Entries */}
                           {de.map(e => {
@@ -6280,6 +6285,18 @@ function CashBook() {
                                 <td className="px-4 py-2.5 text-right font-semibold text-emerald-700">{e.type==='income'?`Rs. ${Number(e.amount).toLocaleString()}`:''}</td>
                                 <td className="px-4 py-2.5 text-right font-semibold text-red-600">{e.type==='expense'?`Rs. ${Number(e.amount).toLocaleString()}`:''}</td>
                                 <td className={`px-4 py-2.5 text-right font-bold ${e.acctBalance>=0?'text-blue-700':'text-red-600'}`}>{fmtBal(e.acctBalance)}</td>
+                                <td className="px-4 py-2.5 text-right">
+                                  <div className="flex gap-1 justify-end">
+                                    <button onClick={()=>window.requireMasterCode(()=>setCbEdit({...e}),`Edit: ${e.description}`)}
+                                      className="p-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-600 text-xs font-bold border border-amber-200" title="Edit">✏️</button>
+                                    <button onClick={()=>window.requireMasterCode(()=>{
+                                      if(!window.confirm('Delete this entry?')) return;
+                                      const upd=entries.filter(x=>x.id!==e.id);
+                                      S.set(K.CBOOK,upd); refreshEntries();
+                                    },`Delete: ${e.description}`)}
+                                      className="p-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-500 text-xs font-bold border border-red-200" title="Delete">🗑️</button>
+                                  </div>
+                                </td>
                               </tr>
                             );
                           })}
@@ -6289,6 +6306,7 @@ function CashBook() {
                             <td className="px-4 py-2 text-right text-xs font-bold text-emerald-700">Rs. {totalIn.toLocaleString()}</td>
                             <td className="px-4 py-2 text-right text-xs font-bold text-red-600">Rs. {totalOut.toLocaleString()}</td>
                             <td className={`px-4 py-2 text-right text-sm font-extrabold ${closingBal>=0?'text-blue-800':'text-red-700'}`}>{fmtBal(closingBal)}</td>
+                            <td></td>
                           </tr>
                         </React.Fragment>
                       );
@@ -6443,6 +6461,42 @@ function CashBook() {
           <div className="flex gap-2 mt-5">
             <Btn full variant={ef.type==='income'?'green':'red'} onClick={saveEntry}>Save Entry</Btn>
             <Btn variant="outline" onClick={() => setEntryMod(false)}>Cancel</Btn>
+          </div>
+        </Modal>
+      )}
+
+      {/* Edit Cash Book Entry Modal */}
+      {cbEdit && (
+        <Modal title={`Edit Entry`} onClose={() => setCbEdit(null)}>
+          <Field label="Date *">
+            <input type="date" value={cbEdit.date?.slice(0,10)||''} onChange={e=>setCbEdit({...cbEdit,date:e.target.value})} className={inputCls}/>
+          </Field>
+          <Field label="Type *">
+            <div className="flex gap-3">
+              {['income','expense'].map(t=>(
+                <label key={t} className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-xl border-2 cursor-pointer text-sm font-semibold transition-all ${cbEdit.type===t?(t==='income'?'border-emerald-500 bg-emerald-50 text-emerald-700':'border-red-500 bg-red-50 text-red-700'):'border-gray-200 text-gray-500 hover:border-gray-300'}`}>
+                  <input type="radio" name="cbEditType" value={t} checked={cbEdit.type===t} onChange={()=>setCbEdit({...cbEdit,type:t})} className="hidden"/>
+                  {t==='income'?'↑ Income':'↓ Expense'}
+                </label>
+              ))}
+            </div>
+          </Field>
+          <Inp label="Description *" value={cbEdit.description||''} onChange={e=>setCbEdit({...cbEdit,description:e.target.value})} placeholder="Description"/>
+          <Inp label="Amount (Rs.) *" type="number" min="0" value={cbEdit.amount||''} onChange={e=>setCbEdit({...cbEdit,amount:e.target.value})} placeholder="Amount"/>
+          <Field label="Account">
+            <select value={cbEdit.accountId||''} onChange={e=>setCbEdit({...cbEdit,accountId:e.target.value})} className={inputCls}>
+              <option value="">— Select Account —</option>
+              {accounts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </Field>
+          <Inp label="Note (optional)" value={cbEdit.note||''} onChange={e=>setCbEdit({...cbEdit,note:e.target.value})} placeholder="Additional details"/>
+          <div className="flex gap-2 mt-5">
+            <Btn full variant={cbEdit.type==='income'?'green':'red'} onClick={()=>{
+              if (!cbEdit.description?.trim() || !cbEdit.amount) return alert('Description and amount required.');
+              const upd = entries.map(x => x.id===cbEdit.id ? {...x, ...cbEdit, amount: Number(cbEdit.amount)} : x);
+              S.set(K.CBOOK, upd); refreshEntries(); setCbEdit(null);
+            }}>💾 Save Changes</Btn>
+            <Btn variant="outline" onClick={()=>setCbEdit(null)}>Cancel</Btn>
           </div>
         </Modal>
       )}
