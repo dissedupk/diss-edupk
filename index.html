@@ -999,14 +999,20 @@ function openSiblingWindow() {
       }));
       const updated = [...existing, ...newStudents];
       localStorage.setItem('sms_stu', JSON.stringify(updated));
-      showMsg('✅ '+newStudents.length+' student(s) saved! Closing window...', 'success');
-      // Always close after 1.5s — reload parent if available
-      setTimeout(function() {
-        try { if (window.opener && !window.opener.closed) window.opener.location.reload(); } catch(e){}
-        window.close();
-        // Fallback: if window.close() is blocked, redirect to blank
-        setTimeout(function(){ document.body.innerHTML='<div style="text-align:center;padding:60px;font-family:sans-serif"><h2 style="color:#10b981">✅ Saved!</h2><p style="color:#6b7280;margin-top:10px">You can close this window now.</p><button onclick="window.close()" style="margin-top:20px;padding:12px 28px;background:#3b82f6;color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer">Close Window</button></div>'; }, 500);
-      }, 1500);
+      // ── Replace entire page immediately so form can't be resubmitted ──
+      document.body.innerHTML = '<div style="text-align:center;padding:80px 40px;font-family:\'Segoe UI\',sans-serif;background:#f0fdf4;min-height:100vh">'
+        +'<div style="font-size:72px;margin-bottom:20px">✅</div>'
+        +'<h2 style="color:#059669;font-size:28px;font-weight:800;margin-bottom:12px">'+newStudents.length+' Student(s) Saved!</h2>'
+        +'<p style="color:#6b7280;font-size:15px;margin-bottom:8px">Annual Fund: Rs.'+afEach+' each &nbsp;|&nbsp; Sibling Discount: Rs.'+sdEach+' each</p>'
+        +'<p style="color:#9ca3af;font-size:13px;margin-bottom:30px">Main window is refreshing… This window will close automatically.</p>'
+        +'<button onclick="window.close()" style="padding:14px 36px;background:#10b981;color:#fff;border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;box-shadow:0 4px 12px rgba(16,185,129,.3)">✕ Close Window</button>'
+        +'</div>';
+      // Reload parent + close this window (try multiple times)
+      try { if (window.opener && !window.opener.closed) window.opener.location.reload(); } catch(e) {}
+      window.close();
+      setTimeout(function(){ window.close(); }, 500);
+      setTimeout(function(){ window.close(); }, 1500);
+      setTimeout(function(){ window.close(); }, 3000);
     }
     // Start with 1 row
     addRow();
