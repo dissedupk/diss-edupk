@@ -785,7 +785,7 @@ function Dashboard({ setPage }) {
 }
 
 // ── STUDENTS ─────────────────────────────────────────────────────────────────
-const blankStu = { name:'', father:'', cls:'1', roll:'', annualFund:'', contact:'', address:'', family:'', familyId:'', siblingDiscount:'', photo:'' };
+const blankStu = { name:'', father:'', cls:'1', roll:'', annualFund:'', openingBalance:'', contact:'', address:'', family:'', familyId:'', siblingDiscount:'', photo:'' };
 
 function Students() {
   const { role } = React.useContext(UserContext);
@@ -956,7 +956,19 @@ function Students() {
           <Inp label="Father's Name *" value={form.father||''} onChange={e => setForm({...form, father: e.target.value})} placeholder="Father's full name"/>
           <Sel label="Class *" value={form.cls} onChange={e => setForm({...form, cls: e.target.value})} options={CLASSES.map(c => ({v:c, l:`Class ${c}`}))}/>
           <Inp label="Roll Number *" value={form.roll} onChange={e => setForm({...form, roll: e.target.value})} placeholder="e.g. 101"/>
-          <Inp label="Annual Fund (Rs.)" type="number" min="0" value={form.annualFund||''} onChange={e => setForm({...form, annualFund: e.target.value})} placeholder="e.g. 500 — leave blank if not applicable"/>
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <Inp label="Annual Fund (Rs.)" type="number" min="0" value={form.annualFund||''} onChange={e => setForm({...form, annualFund: e.target.value})} placeholder="e.g. 500 — leave blank if none"/>
+            </div>
+            <div className="flex-1">
+              <Inp label="Opening Balance (Rs.)" type="number" min="0" value={form.openingBalance||''} onChange={e => setForm({...form, openingBalance: e.target.value})} placeholder="Previous dues — 0 if none"/>
+            </div>
+          </div>
+          {Number(form.openingBalance) > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2 mb-2 text-xs text-amber-700">
+              ⚠️ Opening balance of <strong>Rs. {Number(form.openingBalance).toLocaleString()}</strong> will appear as a prior due in fee collection.
+            </div>
+          )}
           <div className="flex gap-2">
             <div className="flex-1"><Inp label="Family Name (for siblings)" value={form.family||''} onChange={e => setForm({...form, family: e.target.value})} placeholder="e.g. Khan Family — same for all siblings"/></div>
             <div style={{width:130}}><Inp label="Family ID / Serial No." value={form.familyId||''} onChange={e => setForm({...form, familyId: e.target.value})} placeholder="e.g. F-001"/></div>
@@ -1801,11 +1813,12 @@ function FeeCollection() {
     const info = paidMap[stu.id];
     const paid = info ? info.total : 0;
     if (paid <= 0) return 'unpaid';
-    // Net due = class fee − discounts (so discounted students show correct status)
-    const stuRate   = Number(stu.annualFund || 0);
-    const autoDisc  = stuRate > 0 && stuRate < due ? due - stuRate : 0;
-    const totalDisc = info ? info.totalDisc : autoDisc;
-    const netDue    = Math.max(0, due - totalDisc);
+    // Net due = class fee − discounts + opening balance carry-forward
+    const stuRate      = Number(stu.annualFund || 0);
+    const autoDisc     = stuRate > 0 && stuRate < due ? due - stuRate : 0;
+    const totalDisc    = info ? info.totalDisc : autoDisc;
+    const openingBal   = Number(stu.openingBalance || 0);
+    const netDue       = Math.max(0, due - totalDisc) + openingBal;
     if (netDue > 0 && paid < netDue) return 'partial';
     return 'paid';
   };
@@ -2151,14 +2164,15 @@ function FeeCollection() {
                     </thead>
                     <tbody className="divide-y divide-gray-50">
                       {filtered.map(stu => {
-                        const due     = Number(classFees[stu.cls] || 0);
-                        const stuRate = Number(stu.annualFund || 0);
-                        const autoDisc = stuRate > 0 && stuRate < due ? due - stuRate : 0;
-                        const info    = paidMap[stu.id];
-                        const paid    = info ? info.total : 0;
-                        const disc    = info ? info.totalDisc : (autoDisc || 0);
-                        const netDue  = Math.max(0, due - disc);
-                        const status  = getStatus(stu);
+                        const due        = Number(classFees[stu.cls] || 0);
+                        const stuRate    = Number(stu.annualFund || 0);
+                        const autoDisc   = stuRate > 0 && stuRate < due ? due - stuRate : 0;
+                        const info       = paidMap[stu.id];
+                        const paid       = info ? info.total : 0;
+                        const disc       = info ? info.totalDisc : (autoDisc || 0);
+                        const openingBal = Number(stu.openingBalance || 0);
+                        const netDue     = Math.max(0, due - disc) + openingBal;
+                        const status     = getStatus(stu);
                         const lastPay = info ? [...info.pays].sort((a,b)=>new Date(b.date)-new Date(a.date))[0] : null;
                         return (
                           <tr key={stu.id} className="hover:bg-slate-50">
@@ -2171,6 +2185,7 @@ function FeeCollection() {
                                 <div>
                                   <div className="font-semibold text-gray-800">{stu.name}</div>
                                   <div className="text-xs text-gray-400">Roll: {stu.roll}</div>
+                                  {openingBal > 0 && <div className="text-xs text-amber-600 font-semibold">📂 Prev: Rs. {openingBal.toLocaleString()}</div>}
                                 </div>
                               </div>
                             </td>
@@ -2185,8 +2200,11 @@ function FeeCollection() {
                                 : <span className="text-gray-300 text-xs">—</span>}
                             </td>
                             <td className="px-4 py-3 hidden sm:table-cell">
-                              {due > 0
-                                ? <span className={`font-semibold ${disc > 0 ? 'text-emerald-700' : 'text-gray-700'}`}>Rs. {netDue.toLocaleString()}</span>
+                              {due > 0 || openingBal > 0
+                                ? <div>
+                                    <span className={`font-semibold ${disc > 0 ? 'text-emerald-700' : 'text-gray-700'}`}>Rs. {netDue.toLocaleString()}</span>
+                                    {openingBal > 0 && <div className="text-xs text-amber-500">(incl. prev Rs. {openingBal.toLocaleString()})</div>}
+                                  </div>
                                 : <span className="text-gray-300">—</span>}
                             </td>
                             <td className="px-4 py-3">
@@ -2573,6 +2591,11 @@ function FeeCollection() {
           <div className="bg-blue-50 rounded-xl p-3 mb-4">
             <p className="font-bold text-blue-800">{collMod.stu.name}</p>
             <p className="text-sm text-blue-600">Class {collMod.stu.cls} | Roll: {collMod.stu.roll}{collMod.stu.family ? ` | ${collMod.stu.family}` : ''}</p>
+            {Number(collMod.stu.openingBalance||0) > 0 && (
+              <div className="mt-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5 text-sm text-amber-700">
+                📂 Opening Balance (prev dues): <strong>Rs. {Number(collMod.stu.openingBalance).toLocaleString()}</strong>
+              </div>
+            )}
             {collMod.alreadyPaid > 0 && (
               <div className="flex gap-4 mt-2 text-sm">
                 <span className="text-gray-600">Already Paid: <strong className="text-emerald-700">Rs. {collMod.alreadyPaid.toLocaleString()}</strong></span>
