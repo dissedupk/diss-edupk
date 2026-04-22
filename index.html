@@ -785,7 +785,7 @@ function Dashboard({ setPage }) {
 }
 
 // ── STUDENTS ─────────────────────────────────────────────────────────────────
-const blankStu = { name:'', father:'', cls:'1', roll:'', annualFund:'', openingBalance:'', contact:'', address:'', family:'', familyId:'', siblingDiscount:'', photo:'' };
+const blankStu = { name:'', father:'', cls:'1', roll:'', monthlyFee:'', annualFund:'', openingBalance:'', contact:'', address:'', family:'', familyId:'', siblingDiscount:'', photo:'' };
 
 // ── Sibling Registration — opens separate popup window ──────────────────────
 function openSiblingWindow() {
@@ -838,7 +838,8 @@ function openSiblingWindow() {
       <div><label>Contact Number</label><input id="contact" placeholder="0321-1234567"/></div>
       <div><label>Address</label><input id="address" placeholder="Home address"/></div>
     </div>
-    <div class="grid2" style="margin-top:10px">
+    <div class="grid3" style="margin-top:10px">
+      <div><label>Monthly Fee (Rs.) — their actual rate</label><input id="monthlyFee" type="number" min="0" placeholder="Leave blank = full fee"/></div>
       <div><label>Annual Fund (Rs.) — same for all</label><input id="annualFund" type="number" min="0" placeholder="0 if not applicable"/></div>
       <div><label>Sibling Discount (Rs./month) — same for all</label><input id="sibDisc" type="number" min="0" placeholder="0 if none"/></div>
     </div>
@@ -907,9 +908,10 @@ function openSiblingWindow() {
       // Read current students from localStorage
       const existing = JSON.parse(localStorage.getItem('sms_stu') || '[]');
       const uid = () => Math.random().toString(36).slice(2,10)+Date.now().toString(36);
+      const mFee = document.getElementById('monthlyFee').value;
       const newStudents = siblings.map(s => ({
         id: uid(), name: s.name, father, cls: s.cls, roll: s.roll,
-        annualFund: af||'', openingBalance:'', contact, address,
+        monthlyFee: mFee||'', annualFund: af||'', openingBalance:'', contact, address,
         family: family||father+' Family', familyId, siblingDiscount: sibDisc||'', photo:''
       }));
       const updated = [...existing, ...newStudents];
@@ -1101,10 +1103,34 @@ function Students() {
             <Sel label="Class *" value={form.cls} onChange={e => setForm({...form, cls: e.target.value})} options={CLASSES.map(c => ({v:c, l:`Class ${c}`}))}/>
             <Inp label="Roll Number *" value={form.roll} onChange={e => setForm({...form, roll: e.target.value})} placeholder="e.g. 101"/>
           </div>
-          {/* ── Row 3: Annual Fund / Opening Balance ── */}
+          {/* ── Row 3: Monthly Fee (student rate) — auto-calculates discount ── */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-0">
+            <div>
+              <Inp label="Monthly Fee (Rs.) — Student's Actual Rate" type="number" min="0" value={form.monthlyFee||''} onChange={e => setForm({...form, monthlyFee: e.target.value})} placeholder="Leave blank = pay full class fee"/>
+              {(() => {
+                const classFees = S.get(K.CF, {});
+                const classDue  = Number(classFees[form.cls] || 0);
+                const stuFee    = Number(form.monthlyFee || 0);
+                const autoDisc  = stuFee > 0 && stuFee < classDue ? classDue - stuFee : 0;
+                if (!classDue) return <p className="text-xs text-gray-400 mt-1 mb-2">Set class fee in Fee Settings to see auto-discount.</p>;
+                if (stuFee > classDue) return <p className="text-xs text-red-500 mt-1 mb-2">⚠️ Student fee cannot exceed class fee (Rs. {classDue.toLocaleString()}).</p>;
+                if (autoDisc > 0) return (
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 mb-2 text-xs">
+                    <span className="text-gray-600">Class Fee: Rs. {classDue.toLocaleString()} </span>
+                    <span className="text-red-500 font-bold"> − Rs. {autoDisc.toLocaleString()} discount </span>
+                    <span className="text-emerald-700 font-bold">= Rs. {stuFee.toLocaleString()} ✅</span>
+                  </div>
+                );
+                if (stuFee === classDue) return <p className="text-xs text-gray-400 mt-1 mb-2">No discount — pays full class fee.</p>;
+                return <p className="text-xs text-blue-500 mt-1 mb-2">Enter amount &lt; Rs. {classDue.toLocaleString()} to auto-add discount.</p>;
+              })()}
+            </div>
             <Inp label="Annual Fund (Rs.)" type="number" min="0" value={form.annualFund||''} onChange={e => setForm({...form, annualFund: e.target.value})} placeholder="e.g. 500 — leave blank if none"/>
+          </div>
+          {/* ── Row 4: Opening Balance ── */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-0">
             <Inp label="Opening Balance (Rs.) — Previous Dues" type="number" min="0" value={form.openingBalance||''} onChange={e => setForm({...form, openingBalance: e.target.value})} placeholder="0 if no prior balance"/>
+            <div/>
           </div>
           {Number(form.openingBalance) > 0 && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2 mb-2 text-xs text-amber-700">
@@ -1966,7 +1992,8 @@ function FeeCollection() {
     const paid = info ? info.total : 0;
     if (paid <= 0) return 'unpaid';
     // Net due = class fee − discounts + opening balance carry-forward
-    const stuRate      = Number(stu.annualFund || 0);
+    // monthlyFee = student's personal rate; discount = classFee - monthlyFee
+    const stuRate      = Number(stu.monthlyFee || 0) || Number(stu.annualFund || 0);
     const autoDisc     = stuRate > 0 && stuRate < due ? due - stuRate : 0;
     const totalDisc    = info ? info.totalDisc : autoDisc;
     const openingBal   = Number(stu.openingBalance || 0);
@@ -1998,8 +2025,8 @@ function FeeCollection() {
     const due         = Number(classFees[stu.cls] || 0);
     const openingBal  = Number(stu.openingBalance || 0);
     const alreadyPaid = paidMap[stu.id]?.total || 0;
-    // Auto discount from annualFund rate
-    const stuRate     = Number(stu.annualFund || 0);
+    // Auto discount: monthlyFee = student's personal rate; discount = classFee - monthlyFee
+    const stuRate     = Number(stu.monthlyFee || 0) || Number(stu.annualFund || 0);
     const autoDisc    = stuRate > 0 && stuRate < due ? due - stuRate : 0;
     const netMonthly  = Math.max(0, due - autoDisc); // student's monthly net fee
     const totalDue    = netMonthly + openingBal;      // total owed including prior balance
@@ -2327,8 +2354,8 @@ function FeeCollection() {
                     <tbody className="divide-y divide-gray-50">
                       {filtered.map(stu => {
                         const due        = Number(classFees[stu.cls] || 0);
-                        const stuRate    = Number(stu.annualFund || 0);
-                        // autoDisc: if student has a personal rate < class fee, difference is discount
+                        // monthlyFee = student's personal rate → auto discount = classFee - monthlyFee
+                        const stuRate    = Number(stu.monthlyFee || 0) || Number(stu.annualFund || 0);
                         const autoDisc   = stuRate > 0 && stuRate < due ? due - stuRate : 0;
                         const info       = paidMap[stu.id];
                         const paid       = info ? info.total : 0;
