@@ -33,6 +33,10 @@
   </style>
 </head>
 <body class="bg-slate-100">
+<script>
+// Safety net: remove loading screen after 3s even if Babel/React fails
+setTimeout(function(){var l=document.getElementById('fb-loading');if(l)l.remove();},3000);
+</script>
 <div id="fb-loading" style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#f1f5f9;z-index:9999;font-family:'Segoe UI',Arial,sans-serif">
   <div style="text-align:center">
     <div style="font-size:2.5rem;margin-bottom:1rem">🏫</div>
@@ -5028,7 +5032,7 @@ function Exams() {
         const colW  = Math.floor(100 / tcols.length);
         const thead = `<tr>${tcols.map(c=>`<th style="width:${colW}%">${c.header||''}</th>`).join('')}</tr>`;
         const tbody = Array(trows).fill(0).map((_,ri)=>
-          `<tr>${tcols.map((_,ci)=>`<td style="height:${trh}">${tdata[`${ri}_${ci}`]||''}</td>`).join('')}</tr>`
+          '<tr>'+tcols.map(function(_,ci){return '<td style="height:'+trh+'">'+( tdata[ri+'_'+ci]||'' )+'</td>';}).join('')+'</tr>'
         ).join('');
         tableBlock = `<table class="q-table" style="direction:${tdir};margin-bottom:8px"><thead>${thead}</thead><tbody>${tbody}</tbody></table>`;
       }
@@ -5753,12 +5757,10 @@ function Exams() {
                           {(q.tableRows||1)>1 && (
                             <button onClick={()=>{
                               const nr=(q.tableRows||1)-1;
-                              // remove last row data
-                              const nd={...(q.tableData||{})};
-                              (q.tableColumns||[]).forEach((_,ci)=>delete nd[`${nr}_${ci}`]);
-                              updateQ(q.id,'tableRows',nr);
-                              updateQ(q.id,'tableData',nd);
-                            }} className="px-2 py-1 text-xs bg-red-100 text-red-600 rounded font-semibold hover:bg-red-200">− Row</button>
+                              const nd=Object.assign({},(q.tableData||{}));
+                              (q.tableColumns||[]).forEach(function(_,ci){delete nd[nr+'_'+ci];});
+                              setPaperQs(function(prev){return prev.map(function(qq){return qq.id===q.id?Object.assign({},qq,{tableRows:nr,tableData:nd}):qq;});});
+                            }} className="px-2 py-1 text-xs bg-red-100 text-red-600 rounded font-semibold hover:bg-red-200">- Row</button>
                           )}
                           {/* Direction */}
                           <div className="flex items-center gap-1 ml-1">
@@ -5800,9 +5802,11 @@ function Exams() {
                                 <tr key={ri}>
                                   {(q.tableColumns||[{header:''},{header:''}]).map((col,ci)=>(
                                     <td key={ci} style={{border:'1.5px solid #334155',padding:'2px 4px',minHeight:'32px'}}>
-                                      <input value={(q.tableData||{})[`${ri}_${ci}`]||''} onChange={e=>{
-                                        updateQ(q.id,'tableData',{...(q.tableData||{}),[`${ri}_${ci}`]:e.target.value});
-                                      }} placeholder="(empty = student writes)"
+                                      <input value={(q.tableData||{})[ri+'_'+ci]||''} onChange={e=>{
+                                        var nd=Object.assign({},(q.tableData||{}));
+                                        nd[ri+'_'+ci]=e.target.value;
+                                        updateQ(q.id,'tableData',nd);
+                                      }} placeholder="type to pre-fill"
                                       className="w-full text-xs px-1 outline-none" style={{direction:q.tableDir||'ltr'}}/>
                                     </td>
                                   ))}
