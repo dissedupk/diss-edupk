@@ -789,10 +789,10 @@ const blankStu = { name:'', father:'', cls:'1', roll:'', monthlyFee:'', annualFu
 
 // ── Sibling Registration — opens separate popup window ──────────────────────
 function openSiblingWindow() {
-  const classes = JSON.stringify(CLASSES);
-  const existingStudents = JSON.stringify(S.get(K.STU, []));
-  const win = window.open('', '_blank', 'width=860,height=780,scrollbars=yes,resizable=yes');
-  win.document.write(`<!DOCTYPE html><html><head><title>Add Siblings — DISS</title>
+  const classes    = JSON.stringify(CLASSES);
+  const classFees  = JSON.stringify(S.get(K.CF, {}));
+  const win = window.open('', '_blank', 'width=900,height=820,scrollbars=yes,resizable=yes');
+  win.document.write(`<!DOCTYPE html><html><head><title>Add New Student — DISS</title>
   <meta charset="utf-8"/>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
@@ -803,18 +803,19 @@ function openSiblingWindow() {
     .card{background:#fff;border-radius:14px;padding:18px;margin-bottom:14px;box-shadow:0 1px 4px rgba(0,0,0,0.08)}
     .card h2{font-size:13px;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #f3f4f6}
     .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-    .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+    .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
     label{display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
     input,select{width:100%;border:2px solid #e5e7eb;border-radius:8px;padding:8px 12px;font-size:13px;outline:none;transition:.2s}
     input:focus,select:focus{border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.1)}
+    .preview{font-size:11px;margin-top:5px;padding:6px 10px;border-radius:7px;font-weight:600;min-height:24px}
+    .preview.green{background:#d1fae5;color:#065f46;border:1px solid #6ee7b7}
+    .preview.amber{background:#fef3c7;color:#92400e;border:1px solid #fcd34d}
+    .preview.gray{background:#f3f4f6;color:#6b7280;border:1px solid #e5e7eb}
     .sib-row{display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:8px;align-items:center;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px;margin-bottom:8px}
-    .sib-row input,select{margin:0}
-    .sib-num{font-size:12px;font-weight:700;color:#6b7280;text-align:center;background:#e5e7eb;border-radius:6px;padding:4px 8px}
     .btn{padding:10px 20px;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;transition:.2s}
     .btn-blue{background:#3b82f6;color:#fff}.btn-blue:hover{background:#2563eb}
     .btn-green{background:#10b981;color:#fff;width:100%;padding:14px;font-size:15px}.btn-green:hover{background:#059669}
     .btn-red{background:#ef4444;color:#fff;padding:6px 10px;font-size:12px}.btn-red:hover{background:#dc2626}
-    .btn-gray{background:#e5e7eb;color:#374151}.btn-gray:hover{background:#d1d5db}
     .msg{padding:10px 14px;border-radius:8px;font-size:13px;font-weight:600;margin-bottom:12px;display:none}
     .msg.success{background:#d1fae5;color:#065f46;border:1px solid #6ee7b7;display:block}
     .msg.error{background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;display:block}
@@ -822,8 +823,8 @@ function openSiblingWindow() {
     .sibs-header span{font-size:10px;font-weight:700;color:#9ca3af;text-transform:uppercase}
   </style></head><body>
   <div class="hdr">
-    <h1>👨‍👧‍👦 Add Siblings Together</h1>
-    <p>Enter common family info once — add each sibling's name, class and roll separately</p>
+    <h1>🎓 Add New Student</h1>
+    <p>Single student or full siblings family — common info entered once</p>
   </div>
   <div id="msg" class="msg"></div>
 
@@ -838,28 +839,101 @@ function openSiblingWindow() {
       <div><label>Contact Number</label><input id="contact" placeholder="0321-1234567"/></div>
       <div><label>Address</label><input id="address" placeholder="Home address"/></div>
     </div>
-    <div class="grid3" style="margin-top:10px">
-      <div><label>Monthly Fee (Rs.) — their actual rate</label><input id="monthlyFee" type="number" min="0" placeholder="Leave blank = full fee"/></div>
-      <div><label>Annual Fund (Rs.) — same for all</label><input id="annualFund" type="number" min="0" placeholder="0 if not applicable"/></div>
-      <div><label>Sibling Discount (Rs./month) — same for all</label><input id="sibDisc" type="number" min="0" placeholder="0 if none"/></div>
+  </div>
+
+  <div class="card">
+    <h2>💰 Fee & Financial Details</h2>
+    <div class="grid3">
+      <div>
+        <label>Monthly Fee (Rs.) — student's actual rate</label>
+        <input id="monthlyFee" type="number" min="0" placeholder="0 = pays full class fee" oninput="updatePreviews()"/>
+        <div id="mfPreview" class="preview gray">Enter a class fee amount to see discount</div>
+      </div>
+      <div>
+        <label>Annual Fund (Rs.) — total for family</label>
+        <input id="annualFund" type="number" min="0" placeholder="0 if not applicable" oninput="updatePreviews()"/>
+        <div id="afPreview" class="preview gray">Enter amount to see per-student share</div>
+      </div>
+      <div>
+        <label>Sibling Discount (Rs./month) — total for family</label>
+        <input id="sibDisc" type="number" min="0" placeholder="0 if none" oninput="updatePreviews()"/>
+        <div id="sdPreview" class="preview gray">Enter amount to see per-student share</div>
+      </div>
     </div>
   </div>
 
   <div class="card">
-    <h2>👦👧 Siblings — Add Each Child</h2>
+    <h2>👦👧 Students — Add Each Child</h2>
     <div class="sibs-header">
       <span>Full Name *</span><span>Class *</span><span>Roll No *</span><span></span>
     </div>
     <div id="sibRows"></div>
-    <button class="btn btn-blue" onclick="addRow()" style="margin-top:8px">+ Add Another Sibling</button>
+    <button class="btn btn-blue" onclick="addRow()" style="margin-top:8px">+ Add Another Student</button>
   </div>
 
-  <button class="btn btn-green" onclick="saveAll()">✅ Save All Siblings</button>
-  <p style="text-align:center;font-size:11px;color:#9ca3af;margin-top:10px">This window will close automatically after saving.</p>
+  <button class="btn btn-green" onclick="saveAll()">✅ Save & Add to System</button>
+  <p style="text-align:center;font-size:11px;color:#9ca3af;margin-top:10px">Window closes automatically after saving.</p>
 
   <script>
-    const CLASSES = ${classes};
+    const CLASSES   = ${classes};
+    const CLASS_FEES = ${classFees};
     let rowCount = 0;
+
+    function getSibCount() {
+      return document.querySelectorAll('.sib-row').length || 1;
+    }
+
+    function updatePreviews() {
+      const mFee   = Number(document.getElementById('monthlyFee').value) || 0;
+      const af     = Number(document.getElementById('annualFund').value) || 0;
+      const sibD   = Number(document.getElementById('sibDisc').value) || 0;
+      const count  = getSibCount();
+
+      // Monthly fee → show discount based on first sibling's class (or generic note)
+      const firstCls = document.querySelector('.sib-row select')?.value || '';
+      const classFee = Number(CLASS_FEES[firstCls] || 0);
+      const mfEl = document.getElementById('mfPreview');
+      if (mFee > 0 && classFee > 0) {
+        const disc = classFee - mFee;
+        if (disc > 0) {
+          mfEl.className='preview green';
+          mfEl.textContent = 'Class fee Rs.'+classFee.toLocaleString()+' − Rs.'+disc.toLocaleString()+' discount = Rs.'+mFee.toLocaleString()+' ✅';
+        } else if (disc === 0) {
+          mfEl.className='preview gray'; mfEl.textContent = 'No discount — paying full class fee';
+        } else {
+          mfEl.className='preview amber'; mfEl.textContent = '⚠️ Student fee exceeds class fee!';
+        }
+      } else if (mFee === 0) {
+        mfEl.className='preview gray'; mfEl.textContent = '0 = pays full class fee (no discount)';
+      } else {
+        mfEl.className='preview gray'; mfEl.textContent = 'Set class fee in settings to see discount';
+      }
+
+      // Annual Fund → divide by siblings
+      const afEl = document.getElementById('afPreview');
+      if (af > 0 && count > 1) {
+        const perStu = Math.round(af / count);
+        afEl.className='preview green';
+        afEl.textContent = 'Rs.'+af.toLocaleString()+' ÷ '+count+' students = Rs.'+perStu.toLocaleString()+' each ✅';
+      } else if (af > 0) {
+        afEl.className='preview green'; afEl.textContent = 'Rs.'+af.toLocaleString()+' for 1 student ✅';
+      } else {
+        afEl.className='preview gray'; afEl.textContent = '0 — no annual fund';
+      }
+
+      // Sibling Discount → divide by siblings
+      const sdEl = document.getElementById('sdPreview');
+      if (sibD > 0 && count > 1) {
+        const perStu = Math.round(sibD / count);
+        sdEl.className='preview green';
+        sdEl.textContent = 'Rs.'+sibD.toLocaleString()+' ÷ '+count+' students = Rs.'+perStu.toLocaleString()+' each ✅';
+      } else if (sibD > 0) {
+        sdEl.className='preview green'; sdEl.textContent = 'Rs.'+sibD.toLocaleString()+' for 1 student ✅';
+      } else {
+        sdEl.className='preview gray'; sdEl.textContent = '0 — no sibling discount';
+      }
+    }
+
     function clsOpts(sel) {
       return CLASSES.map(c => '<option value="'+c+'"'+(sel===c?' selected':'')+'>Class '+c+'</option>').join('');
     }
@@ -870,14 +944,15 @@ function openSiblingWindow() {
       div.className = 'sib-row';
       div.id = 'row'+n;
       div.innerHTML = '<input id="sname'+n+'" placeholder="Student full name" value="'+(name||'')+'"/>'
-        +'<select id="scls'+n+'">'+clsOpts(cls||'1')+'</select>'
+        +'<select id="scls'+n+'" onchange="updatePreviews()">'+clsOpts(cls||'1')+'</select>'
         +'<input id="sroll'+n+'" placeholder="e.g. 101" value="'+(roll||'')+'"/>'
         +'<button class="btn btn-red" onclick="removeRow('+n+')" title="Remove">✕</button>';
       document.getElementById('sibRows').appendChild(div);
+      updatePreviews();
     }
     function removeRow(n) {
       const el = document.getElementById('row'+n);
-      if (el) el.remove();
+      if (el) { el.remove(); updatePreviews(); }
     }
     function showMsg(txt, type) {
       const el = document.getElementById('msg');
@@ -885,44 +960,52 @@ function openSiblingWindow() {
       setTimeout(() => el.className='msg', 4000);
     }
     function saveAll() {
-      const father  = document.getElementById('father').value.trim();
-      const family  = document.getElementById('family').value.trim();
-      const familyId= document.getElementById('familyId').value.trim();
-      const contact = document.getElementById('contact').value.trim();
-      const address = document.getElementById('address').value.trim();
-      const af      = document.getElementById('annualFund').value;
-      const sibDisc = document.getElementById('sibDisc').value;
+      const father   = document.getElementById('father').value.trim();
+      const family   = document.getElementById('family').value.trim();
+      const familyId = document.getElementById('familyId').value.trim();
+      const contact  = document.getElementById('contact').value.trim();
+      const address  = document.getElementById('address').value.trim();
+      const mFee     = document.getElementById('monthlyFee').value;
+      const afTotal  = Number(document.getElementById('annualFund').value) || 0;
+      const sdTotal  = Number(document.getElementById('sibDisc').value) || 0;
       if (!father) { showMsg('❌ Father Name is required.', 'error'); return; }
       const rows = document.querySelectorAll('.sib-row');
       const siblings = [];
       let ok = true;
       rows.forEach(row => {
-        const id = row.id.replace('row','');
+        const id   = row.id.replace('row','');
         const name = document.getElementById('sname'+id)?.value.trim();
         const cls  = document.getElementById('scls'+id)?.value;
         const roll = document.getElementById('sroll'+id)?.value.trim();
         if (!name || !roll) { ok=false; return; }
         siblings.push({ name, cls, roll });
       });
-      if (!ok || siblings.length === 0) { showMsg('❌ Fill all sibling names and roll numbers.', 'error'); return; }
-      // Read current students from localStorage
+      if (!ok || siblings.length === 0) { showMsg('❌ Fill all student names and roll numbers.', 'error'); return; }
+      // Divide annual fund & sibling discount equally among all siblings
+      const count    = siblings.length;
+      const afEach   = count > 0 ? Math.round(afTotal / count) : afTotal;
+      const sdEach   = count > 0 ? Math.round(sdTotal / count) : sdTotal;
       const existing = JSON.parse(localStorage.getItem('sms_stu') || '[]');
-      const uid = () => Math.random().toString(36).slice(2,10)+Date.now().toString(36);
-      const mFee = document.getElementById('monthlyFee').value;
+      const uid      = () => Math.random().toString(36).slice(2,10)+Date.now().toString(36);
       const newStudents = siblings.map(s => ({
         id: uid(), name: s.name, father, cls: s.cls, roll: s.roll,
-        monthlyFee: mFee||'', annualFund: af||'', openingBalance:'', contact, address,
-        family: family||father+' Family', familyId, siblingDiscount: sibDisc||'', photo:''
+        monthlyFee: mFee||'',
+        annualFund: afEach > 0 ? String(afEach) : '',
+        openingBalance: '', contact, address,
+        family: family || (father+' Family'),
+        familyId,
+        siblingDiscount: sdEach > 0 ? String(sdEach) : '',
+        photo: ''
       }));
       const updated = [...existing, ...newStudents];
       localStorage.setItem('sms_stu', JSON.stringify(updated));
-      showMsg('✅ '+newStudents.length+' siblings saved successfully! Refreshing parent window...', 'success');
+      showMsg('✅ '+newStudents.length+' student(s) saved! (AF: Rs.'+afEach+' each, Disc: Rs.'+sdEach+' each) Refreshing...', 'success');
       if (window.opener && !window.opener.closed) {
-        setTimeout(() => { window.opener.location.reload(); window.close(); }, 1500);
+        setTimeout(() => { window.opener.location.reload(); window.close(); }, 2000);
       }
     }
-    // Start with 2 sibling rows
-    addRow(); addRow();
+    // Start with 1 row
+    addRow();
   <\/script></body></html>`);
   win.document.close();
 }
