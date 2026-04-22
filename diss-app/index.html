@@ -6572,6 +6572,25 @@ function SecuritySettings() {
         </Card>
       </div>
 
+      {/* Factory Reset */}
+      <Card className="p-5 border-2 border-red-300 bg-red-50 mb-6">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-xl">⚠️</span>
+          <p className="font-bold text-red-700 text-base">Factory Reset — Clear All Data</p>
+          <span className="text-xs bg-red-600 text-white font-bold px-2 py-0.5 rounded-full">DANGER</span>
+        </div>
+        <p className="text-sm text-red-600 mb-4">This will <strong>permanently delete ALL data</strong> — Students, Fees, Staff, Inventory, Cash Book, Users, Accounts, Audit Logs — and reset the app to factory defaults. <strong>This cannot be undone.</strong></p>
+        <Btn variant="red" onClick={() => window.requireMasterCode(() => {
+          if (!window.confirm('⚠️ FINAL WARNING: Delete ALL data and reset the app?\n\nThis cannot be undone. Press OK to confirm.')) return;
+          localStorage.clear();
+          alert('✅ All data cleared. App will now restart.');
+          window.location.reload();
+        }, 'Factory Reset — Delete ALL Data')}>
+          🗑️ Factory Reset (Clear Everything)
+        </Btn>
+        <p className="text-xs text-red-400 mt-2">Master Code required. All users, records and settings will be wiped. You will need to set up the app again from scratch.</p>
+      </Card>
+
       {/* Audit Trail */}
       <div className="flex items-center justify-between mb-3">
         <p className="font-bold text-gray-800">📋 Audit Trail <span className="text-gray-400 font-normal text-sm">({audit.length} entries)</span></p>
