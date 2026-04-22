@@ -846,18 +846,18 @@ function openSiblingWindow() {
     <div class="grid3">
       <div>
         <label>Monthly Fee (Rs.) — student's actual rate</label>
-        <input id="monthlyFee" type="number" min="0" placeholder="0 = pays full class fee" oninput="updatePreviews()"/>
-        <div id="mfPreview" class="preview gray">Enter a class fee amount to see discount</div>
+        <input id="monthlyFee" type="number" min="0" placeholder="0 = pays full class fee"/>
+        <div id="mfPreview" class="preview gray">—</div>
       </div>
       <div>
-        <label>Annual Fund (Rs.) — total for family</label>
-        <input id="annualFund" type="number" min="0" placeholder="0 if not applicable" oninput="updatePreviews()"/>
-        <div id="afPreview" class="preview gray">Enter amount to see per-student share</div>
+        <label>Annual Fund (Rs.) — TOTAL for all siblings</label>
+        <input id="annualFund" type="number" min="0" placeholder="e.g. 5000 for whole family"/>
+        <div id="afPreview" class="preview gray">—</div>
       </div>
       <div>
-        <label>Sibling Discount (Rs./month) — total for family</label>
-        <input id="sibDisc" type="number" min="0" placeholder="0 if none" oninput="updatePreviews()"/>
-        <div id="sdPreview" class="preview gray">Enter amount to see per-student share</div>
+        <label>Sibling Discount (Rs./month) — TOTAL for all siblings</label>
+        <input id="sibDisc" type="number" min="0" placeholder="e.g. 4000 total"/>
+        <div id="sdPreview" class="preview gray">—</div>
       </div>
     </div>
   </div>
@@ -880,57 +880,69 @@ function openSiblingWindow() {
     let rowCount = 0;
 
     function getSibCount() {
-      return document.querySelectorAll('.sib-row').length || 1;
+      var n = document.querySelectorAll('.sib-row').length;
+      return n > 0 ? n : 1;
     }
 
     function updatePreviews() {
-      const mFee   = Number(document.getElementById('monthlyFee').value) || 0;
-      const af     = Number(document.getElementById('annualFund').value) || 0;
-      const sibD   = Number(document.getElementById('sibDisc').value) || 0;
-      const count  = getSibCount();
+      var mFee  = parseFloat(document.getElementById('monthlyFee').value) || 0;
+      var af    = parseFloat(document.getElementById('annualFund').value)  || 0;
+      var sibD  = parseFloat(document.getElementById('sibDisc').value)     || 0;
+      var count = getSibCount();
 
-      // Monthly fee → show discount based on first sibling's class (or generic note)
-      const firstCls = document.querySelector('.sib-row select')?.value || '';
-      const classFee = Number(CLASS_FEES[firstCls] || 0);
-      const mfEl = document.getElementById('mfPreview');
+      // ── Monthly Fee → auto discount ──
+      var firstSel = document.querySelector('.sib-row select');
+      var firstCls = firstSel ? firstSel.value : '';
+      var classFee = parseFloat(CLASS_FEES[firstCls]) || 0;
+      var mfEl = document.getElementById('mfPreview');
       if (mFee > 0 && classFee > 0) {
-        const disc = classFee - mFee;
+        var disc = classFee - mFee;
         if (disc > 0) {
-          mfEl.className='preview green';
-          mfEl.textContent = 'Class fee Rs.'+classFee.toLocaleString()+' − Rs.'+disc.toLocaleString()+' discount = Rs.'+mFee.toLocaleString()+' ✅';
+          mfEl.className = 'preview green';
+          mfEl.textContent = 'Rs.'+classFee+' class fee  −  Rs.'+disc+' discount  =  Rs.'+mFee+' student pays ✅';
         } else if (disc === 0) {
-          mfEl.className='preview gray'; mfEl.textContent = 'No discount — paying full class fee';
+          mfEl.className = 'preview gray';
+          mfEl.textContent = 'Paying full class fee — no discount';
         } else {
-          mfEl.className='preview amber'; mfEl.textContent = '⚠️ Student fee exceeds class fee!';
+          mfEl.className = 'preview amber';
+          mfEl.textContent = '⚠️ Amount is more than class fee (Rs.'+classFee+')';
         }
       } else if (mFee === 0) {
-        mfEl.className='preview gray'; mfEl.textContent = '0 = pays full class fee (no discount)';
+        mfEl.className = 'preview gray';
+        mfEl.textContent = 'Blank = pays full class fee';
       } else {
-        mfEl.className='preview gray'; mfEl.textContent = 'Set class fee in settings to see discount';
+        mfEl.className = 'preview gray';
+        mfEl.textContent = 'Class fee not set — discount will auto-calc from system';
       }
 
-      // Annual Fund → divide by siblings
-      const afEl = document.getElementById('afPreview');
-      if (af > 0 && count > 1) {
-        const perStu = Math.round(af / count);
-        afEl.className='preview green';
-        afEl.textContent = 'Rs.'+af.toLocaleString()+' ÷ '+count+' students = Rs.'+perStu.toLocaleString()+' each ✅';
-      } else if (af > 0) {
-        afEl.className='preview green'; afEl.textContent = 'Rs.'+af.toLocaleString()+' for 1 student ✅';
+      // ── Annual Fund → divide by sibling count ──
+      var afEl = document.getElementById('afPreview');
+      if (af > 0) {
+        var afEach = Math.round(af / count);
+        afEl.className = 'preview green';
+        if (count > 1) {
+          afEl.textContent = 'Rs.'+af+' total  ÷  '+count+' students  =  Rs.'+afEach+' each ✅';
+        } else {
+          afEl.textContent = 'Rs.'+af+' for this student ✅  (add more students to auto-divide)';
+        }
       } else {
-        afEl.className='preview gray'; afEl.textContent = '0 — no annual fund';
+        afEl.className = 'preview gray';
+        afEl.textContent = 'Enter total AF for whole family — auto-divided equally';
       }
 
-      // Sibling Discount → divide by siblings
-      const sdEl = document.getElementById('sdPreview');
-      if (sibD > 0 && count > 1) {
-        const perStu = Math.round(sibD / count);
-        sdEl.className='preview green';
-        sdEl.textContent = 'Rs.'+sibD.toLocaleString()+' ÷ '+count+' students = Rs.'+perStu.toLocaleString()+' each ✅';
-      } else if (sibD > 0) {
-        sdEl.className='preview green'; sdEl.textContent = 'Rs.'+sibD.toLocaleString()+' for 1 student ✅';
+      // ── Sibling Discount → divide by sibling count ──
+      var sdEl = document.getElementById('sdPreview');
+      if (sibD > 0) {
+        var sdEach = Math.round(sibD / count);
+        sdEl.className = 'preview green';
+        if (count > 1) {
+          sdEl.textContent = 'Rs.'+sibD+' total  ÷  '+count+' students  =  Rs.'+sdEach+' each ✅';
+        } else {
+          sdEl.textContent = 'Rs.'+sibD+' for this student ✅  (add more students to auto-divide)';
+        }
       } else {
-        sdEl.className='preview gray'; sdEl.textContent = '0 — no sibling discount';
+        sdEl.className = 'preview gray';
+        sdEl.textContent = 'Enter total discount — auto-divided equally among all students';
       }
     }
 
@@ -1014,8 +1026,13 @@ function openSiblingWindow() {
       setTimeout(function(){ window.close(); }, 1500);
       setTimeout(function(){ window.close(); }, 3000);
     }
+    // Attach live preview listeners
+    document.getElementById('monthlyFee').addEventListener('input', updatePreviews);
+    document.getElementById('annualFund').addEventListener('input', updatePreviews);
+    document.getElementById('sibDisc').addEventListener('input', updatePreviews);
     // Start with 1 row
     addRow();
+    updatePreviews();
   <\/script></body></html>`);
   win.document.close();
 }
