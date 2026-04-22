@@ -4970,8 +4970,114 @@ function VendorBooks() {
 function Exams() {
   const students  = S.get(K.STU, []);
   const [tab, setTab]           = useState('datesheet');
-  const [dateSheets, setDateSheets] = useState(() => S.get(K.DS, {})); // { "Term 1_2026": [{subject,date,day,startTime,endTime}] }
-  const [results, setResults]   = useState(() => S.get(K.RS, {}));      // { stuId_term_year: {marks:{subj:n}, ...} }
+  const [dateSheets, setDateSheets] = useState(() => S.get(K.DS, {}));
+  const [results, setResults]   = useState(() => S.get(K.RS, {}));
+
+  // ── Paper Tab State ──
+  const [paperSettings, setPaperSettings] = useState({ cls: CLASSES[0], subject:'English', term:'Term 1', year: NOW.getFullYear(), date:'', totalMarks:100, time:'2 Hours', instructions:'Attempt all questions.' });
+  const [paperQs, setPaperQs] = useState([]);
+  const blankQ = () => ({ id: uid(), section:'', type:'written', text:'', marks:5, shapes:[], narrowCount:6, mathRows:2, mathCols:4 });
+  const addQ   = () => setPaperQs(prev => [...prev, blankQ()]);
+  const removeQ = (id) => setPaperQs(prev => prev.filter(q => q.id !== id));
+  const updateQ = (id, field, val) => setPaperQs(prev => prev.map(q => q.id===id ? {...q, [field]: val} : q));
+
+  const SHAPE_LIST = ['Circle','Rectangle','Square','Triangle','Sun','Moon','Star','Ball','Apple','Bus','Computer'];
+
+  const shapeSVG = (shape, size=77) => {
+    const h = Math.round(size); const s = {circle:`<ellipse cx="${h/2}" cy="${h/2}" rx="${h/2-4}" ry="${h/2-4}" fill="none" stroke="#222" stroke-width="2"/>`,rectangle:`<rect x="4" y="${h*.2}" width="${h-8}" height="${h*.6}" fill="none" stroke="#222" stroke-width="2"/>`,square:`<rect x="4" y="4" width="${h-8}" height="${h-8}" fill="none" stroke="#222" stroke-width="2"/>`,triangle:`<polygon points="${h/2},4 ${h-4},${h-4} 4,${h-4}" fill="none" stroke="#222" stroke-width="2"/>`,sun:`<circle cx="${h/2}" cy="${h/2}" r="${h/5}" fill="none" stroke="#222" stroke-width="2"/>${[0,45,90,135,180,225,270,315].map(a=>`<line x1="${h/2+Math.cos(a*Math.PI/180)*h/4.5}" y1="${h/2+Math.sin(a*Math.PI/180)*h/4.5}" x2="${h/2+Math.cos(a*Math.PI/180)*h/2.5}" y2="${h/2+Math.sin(a*Math.PI/180)*h/2.5}" stroke="#222" stroke-width="2"/>`).join('')}`,moon:`<path d="M${h*.55},${h*.1} A${h*.35},${h*.35} 0 1,0 ${h*.55},${h*.9} A${h*.25},${h*.25} 0 1,1 ${h*.55},${h*.1}Z" fill="none" stroke="#222" stroke-width="2"/>`,star:`<polygon points="${h/2},${h*.06} ${h*.6},${h*.38} ${h*.94},${h*.38} ${h*.67},${h*.58} ${h*.77},${h*.9} ${h/2},${h*.72} ${h*.23},${h*.9} ${h*.33},${h*.58} ${h*.06},${h*.38} ${h*.4},${h*.38}" fill="none" stroke="#222" stroke-width="2"/>`,ball:`<circle cx="${h/2}" cy="${h/2}" r="${h/2-4}" fill="none" stroke="#222" stroke-width="2"/><path d="M${h*.15},${h*.3} Q${h/2},${h*.15} ${h*.85},${h*.3}" fill="none" stroke="#222" stroke-width="1.5"/><path d="M${h*.08},${h*.6} Q${h/2},${h*.75} ${h*.92},${h*.6}" fill="none" stroke="#222" stroke-width="1.5"/>`,apple:`<path d="M${h/2},${h*.25} C${h*.3},${h*.25} ${h*.1},${h*.42} ${h*.1},${h*.6} C${h*.1},${h*.8} ${h*.3},${h*.92} ${h/2},${h*.92} C${h*.7},${h*.92} ${h*.9},${h*.8} ${h*.9},${h*.6} C${h*.9},${h*.42} ${h*.7},${h*.25} ${h/2},${h*.25}Z" fill="none" stroke="#222" stroke-width="2"/><path d="M${h/2},${h*.25} C${h/2},${h*.12} ${h*.6},${h*.06} ${h*.65},${h*.1}" fill="none" stroke="#222" stroke-width="2"/><path d="M${h*.35},${h*.2} C${h*.28},${h*.08} ${h*.18},${h*.05} ${h*.15},${h*.1}" fill="none" stroke="#222" stroke-width="1.5"/>`,bus:`<rect x="4" y="${h*.22}" width="${h-8}" height="${h*.52}" rx="4" fill="none" stroke="#222" stroke-width="2"/><rect x="${h*.1}" y="${h*.32}" width="${h*.18}" height="${h*.18}" fill="none" stroke="#222" stroke-width="1.5"/><rect x="${h*.38}" y="${h*.32}" width="${h*.18}" height="${h*.18}" fill="none" stroke="#222" stroke-width="1.5"/><rect x="${h*.66}" y="${h*.32}" width="${h*.18}" height="${h*.18}" fill="none" stroke="#222" stroke-width="1.5"/><circle cx="${h*.22}" cy="${h*.78}" r="${h*.08}" fill="none" stroke="#222" stroke-width="2"/><circle cx="${h*.72}" cy="${h*.78}" r="${h*.08}" fill="none" stroke="#222" stroke-width="2"/>`,computer:`<rect x="4" y="4" width="${h-8}" height="${h*.6}" rx="3" fill="none" stroke="#222" stroke-width="2"/><rect x="${h*.1}" y="${h*.12}" width="${h*.8}" height="${h*.44}" fill="none" stroke="#222" stroke-width="1"/><rect x="${h*.32}" y="${h*.65}" width="${h*.36}" height="${h*.12}" fill="none" stroke="#222" stroke-width="1.5"/><rect x="${h*.2}" y="${h*.77}" width="${h*.6}" height="${h*.08}" rx="1" fill="none" stroke="#222" stroke-width="1.5"/>`};
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${h}" height="${h}" viewBox="0 0 ${h} ${h}">${s[shape.toLowerCase()] || s.circle}</svg>`;
+  };
+
+  const printPaper = () => {
+    if (!paperQs.length) return alert('Add at least one question first.');
+    const ps = paperSettings;
+    const BOX = 0.80; // inches — each math box
+    const lineH = '0.38in';
+    const narrowH = '0.22in';
+    let qNum = 0;
+    let sectCurrent = '';
+    const qHtml = paperQs.map(q => {
+      qNum++;
+      let sectionHtml = '';
+      if (q.section && q.section !== sectCurrent) { sectCurrent = q.section; sectionHtml = `<div class="section-hdr">${q.section}</div>`; }
+      let answerHtml = '';
+      if (q.type === 'written') {
+        answerHtml = Array(4).fill(`<div class="line-wide"></div>`).join('');
+      } else if (q.type === 'short') {
+        answerHtml = `<div class="line-wide"></div>`;
+      } else if (q.type === 'narrow') {
+        answerHtml = Array(q.narrowCount || 6).fill(`<div class="line-narrow"></div>`).join('');
+      } else if (q.type === 'math') {
+        const rows = q.mathRows || 2; const cols = q.mathCols || 4;
+        answerHtml = `<div class="math-grid">${Array(rows).fill(Array(cols).fill(`<div class="math-box"></div>`).join('')).map(r=>`<div class="math-row">${r}</div>`).join('')}</div>`;
+      } else if (q.type === 'shapes') {
+        answerHtml = `<div class="shapes-row">${(q.shapes||[]).map(sh => shapeSVG(sh, 77)).join('')}</div><div class="line-wide" style="margin-top:8px"></div>`;
+      }
+      return `${sectionHtml}<div class="question"><div class="q-row"><span class="q-num">Q${qNum}.</span><span class="q-text">${q.text || '(No question text)'}</span><span class="q-marks">[${q.marks} mark${q.marks!=1?'s':''}]</span></div><div class="q-answer">${answerHtml}</div></div>`;
+    }).join('');
+
+    const win = window.open('','_blank','width=820,height=900');
+    win.document.write(`<!DOCTYPE html><html><head><title>Question Paper</title><style>
+      *{box-sizing:border-box;margin:0;padding:0}
+      body{font-family:'Segoe UI',Arial,sans-serif;padding:0.5in;color:#111;font-size:12pt;line-height:1.4}
+      .hdr{text-align:center;border-bottom:3px double #1e3a8a;padding-bottom:10px;margin-bottom:14px}
+      .hdr img{height:60px;object-fit:contain;margin-bottom:6px}
+      .hdr h1{font-size:15pt;font-weight:800;color:#1e3a8a;letter-spacing:.5px}
+      .hdr h2{font-size:12pt;font-weight:700;color:#c0392b;margin:2px 0}
+      .info-row{display:flex;justify-content:space-between;border:1px solid #ccc;padding:7px 12px;border-radius:6px;margin-bottom:10px;font-size:10pt}
+      .student-row{display:flex;justify-content:space-between;margin-bottom:14px;font-size:10pt}
+      .student-row .field{border-bottom:1.5px solid #333;width:38%;padding-bottom:2px}
+      .student-row .field span{color:#555;font-size:9pt}
+      .instructions{font-size:9.5pt;color:#444;border-left:3px solid #1e3a8a;padding:4px 10px;margin-bottom:14px;background:#f8fafc}
+      .section-hdr{font-weight:800;font-size:12pt;color:#1e3a8a;border-bottom:1.5px solid #1e3a8a;margin:18px 0 10px;padding-bottom:4px;text-transform:uppercase;letter-spacing:.5px}
+      .question{margin-bottom:18px}
+      .q-row{display:flex;gap:8px;align-items:flex-start;margin-bottom:6px}
+      .q-num{font-weight:800;min-width:28px;color:#1e3a8a}
+      .q-text{flex:1;font-size:11.5pt}
+      .q-marks{font-size:9pt;color:#666;white-space:nowrap;font-weight:600}
+      .q-answer{margin-left:36px}
+      .line-wide{border-bottom:1px solid #aaa;height:${lineH};width:100%;margin-bottom:2px}
+      .line-narrow{border-bottom:1px solid #bbb;height:${narrowH};width:100%;margin-bottom:1px}
+      .math-row{display:flex;gap:0;margin-bottom:0}
+      .math-box{width:${BOX}in;height:${BOX}in;border:1.5px solid #888;display:inline-block}
+      .math-grid{display:inline-block;border-top:1.5px solid #888;border-left:1.5px solid #888}
+      .math-grid .math-box{border-top:none;border-left:none}
+      .shapes-row{display:flex;gap:20px;flex-wrap:wrap;margin:6px 0}
+      .shapes-row svg{display:block}
+      .sig{display:flex;justify-content:space-between;margin-top:40px;font-size:10pt;border-top:1px solid #ddd;padding-top:12px}
+      .sig span{border-top:1px solid #333;padding-top:4px;min-width:160px;text-align:center;font-size:9pt;color:#555}
+      .dev-footer{text-align:center;margin-top:10px;font-size:7.5pt;color:#aaa}
+      @media print{body{padding:0.4in}button{display:none!important}}
+    </style></head><body>
+    <div class="hdr">
+      <img src="${LOGO_SRC}" onerror="this.style.display='none'" alt="DISS"/>
+      <h1>Discovery International School System</h1>
+      <h2>${ps.subject} — Question Paper</h2>
+    </div>
+    <div class="info-row">
+      <span><b>Class:</b> ${ps.cls}</span>
+      <span><b>Term:</b> ${ps.term} ${ps.year}</span>
+      <span><b>Date:</b> ${ps.date || '___________'}</span>
+      <span><b>Total Marks:</b> ${ps.totalMarks}</span>
+      <span><b>Time Allowed:</b> ${ps.time}</span>
+    </div>
+    <div class="student-row">
+      <div class="field"><span>Student Name:</span> ________________________________</div>
+      <div class="field"><span>Roll No:</span> ____________</div>
+      <div class="field"><span>Marks Obtained:</span> ________ / ${ps.totalMarks}</div>
+    </div>
+    <div class="instructions"><b>Instructions:</b> ${ps.instructions}</div>
+    ${qHtml}
+    <div class="sig">
+      <span>Class Teacher</span>
+      <span>Examiner</span>
+      <span>Principal</span>
+    </div>
+    <div class="dev-footer">DEVELOPED BY TATAHEER BUSINESS GROUP &nbsp;|&nbsp; ALL RIGHTS RESERVED 2026 &nbsp;|&nbsp; CONTACT: +92(321)8555566</div>
+    <script>window.onload=function(){window.print();}<\/script>
+    </body></html>`);
+    win.document.close();
+  };
 
   // ── shared state
   const [selTerm, setSelTerm]   = useState('Term 1');
@@ -5192,7 +5298,7 @@ function Exams() {
 
       {/* Tabs */}
       <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit mb-5">
-        {[['datesheet','📅 Date Sheet'],['results','📊 Result Cards']].map(([k,l])=>(
+        {[['datesheet','📅 Date Sheet'],['results','📊 Result Cards'],['paper','📝 Paper']].map(([k,l])=>(
           <button key={k} onClick={()=>setTab(k)}
             className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${tab===k?'bg-white shadow text-blue-700':'text-gray-500 hover:text-gray-700'}`}>{l}</button>
         ))}
@@ -5331,6 +5437,159 @@ function Exams() {
                 })}
               </div>
           }
+        </div>
+      )}
+
+      {/* ── PAPER TAB ── */}
+      {tab==='paper' && (
+        <div>
+          {/* Paper Settings */}
+          <Card className="p-4 mb-4">
+            <h3 className="font-bold text-gray-700 mb-3">📋 Paper Settings</h3>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+              <div><label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Class</label>
+                <select value={paperSettings.cls} onChange={e=>setPaperSettings({...paperSettings,cls:e.target.value})} className={inputCls}>
+                  {CLASSES.map(c=><option key={c} value={c}>Class {c}</option>)}</select></div>
+              <div><label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Subject</label>
+                <input value={paperSettings.subject} onChange={e=>setPaperSettings({...paperSettings,subject:e.target.value})} className={inputCls} placeholder="English"/></div>
+              <div><label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Term</label>
+                <select value={paperSettings.term} onChange={e=>setPaperSettings({...paperSettings,term:e.target.value})} className={inputCls}>
+                  {TERMS.map(t=><option key={t}>{t}</option>)}</select></div>
+              <div><label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Year</label>
+                <select value={paperSettings.year} onChange={e=>setPaperSettings({...paperSettings,year:Number(e.target.value)})} className={inputCls}>
+                  {years.map(y=><option key={y}>{y}</option>)}</select></div>
+              <div><label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Date</label>
+                <input type="date" value={paperSettings.date} onChange={e=>setPaperSettings({...paperSettings,date:e.target.value})} className={inputCls}/></div>
+              <div><label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Total Marks</label>
+                <input type="number" value={paperSettings.totalMarks} onChange={e=>setPaperSettings({...paperSettings,totalMarks:e.target.value})} className={inputCls}/></div>
+              <div><label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Time Allowed</label>
+                <input value={paperSettings.time} onChange={e=>setPaperSettings({...paperSettings,time:e.target.value})} className={inputCls} placeholder="2 Hours"/></div>
+              <div className="col-span-2 sm:col-span-3 lg:col-span-1"><label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Instructions</label>
+                <input value={paperSettings.instructions} onChange={e=>setPaperSettings({...paperSettings,instructions:e.target.value})} className={inputCls} placeholder="Attempt all questions."/></div>
+            </div>
+          </Card>
+
+          {/* Questions */}
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-bold text-gray-700">Questions <span className="text-gray-400 font-normal text-sm">({paperQs.length})</span></h3>
+            <div className="flex gap-2">
+              <Btn variant="outline" onClick={printPaper}>🖨️ Print Paper</Btn>
+              <Btn onClick={addQ}>+ Add Question</Btn>
+            </div>
+          </div>
+
+          {paperQs.length === 0
+            ? <Empty icon="📝" text="No questions yet. Click + Add Question to start building your paper."/>
+            : <div className="space-y-3">
+                {paperQs.map((q, idx) => (
+                  <Card key={q.id} className="p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 font-bold text-sm flex items-center justify-center shrink-0">Q{idx+1}</span>
+                      <input value={q.section} onChange={e=>updateQ(q.id,'section',e.target.value)} placeholder="Section (optional, e.g. Section A)" className="border border-gray-200 rounded-lg px-3 py-1.5 text-xs flex-1 focus:outline-none focus:ring-1 focus:ring-blue-400"/>
+                      <button onClick={()=>removeQ(q.id)} className="text-red-400 hover:text-red-600 text-lg font-bold px-2">✕</button>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+                      <div>
+                        <label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Question Text</label>
+                        <textarea value={q.text} onChange={e=>updateQ(q.id,'text',e.target.value)} rows={2} placeholder="Type your question here..." className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none"/>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Answer Type</label>
+                          <select value={q.type} onChange={e=>updateQ(q.id,'type',e.target.value)} className={inputCls}>
+                            <option value="written">✍️ Written (4 lines)</option>
+                            <option value="short">✏️ Short (1 line)</option>
+                            <option value="narrow">〰️ Narrow Lines</option>
+                            <option value="math">➕ Math Boxes</option>
+                            <option value="shapes">🔵 Shapes</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Marks</label>
+                          <input type="number" min="1" value={q.marks} onChange={e=>updateQ(q.id,'marks',Number(e.target.value))} className={inputCls}/>
+                        </div>
+                        {q.type==='narrow' && (
+                          <div>
+                            <label className="text-xs font-semibold text-gray-500 uppercase block mb-1">No. of Lines</label>
+                            <input type="number" min="2" max="20" value={q.narrowCount} onChange={e=>updateQ(q.id,'narrowCount',Number(e.target.value))} className={inputCls}/>
+                          </div>
+                        )}
+                        {q.type==='math' && (
+                          <>
+                            <div>
+                              <label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Rows</label>
+                              <input type="number" min="1" max="8" value={q.mathRows} onChange={e=>updateQ(q.id,'mathRows',Number(e.target.value))} className={inputCls}/>
+                            </div>
+                            <div>
+                              <label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Columns</label>
+                              <input type="number" min="1" max="12" value={q.mathCols} onChange={e=>updateQ(q.id,'mathCols',Number(e.target.value))} className={inputCls}/>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Shapes selector */}
+                    {q.type==='shapes' && (
+                      <div>
+                        <label className="text-xs font-semibold text-gray-500 uppercase block mb-2">Select Shapes to show on paper:</label>
+                        <div className="flex flex-wrap gap-2">
+                          {SHAPE_LIST.map(sh => (
+                            <button key={sh} onClick={() => {
+                              const curr = q.shapes || [];
+                              const next = curr.includes(sh) ? curr.filter(s=>s!==sh) : [...curr, sh];
+                              updateQ(q.id,'shapes',next);
+                            }} className={`px-3 py-1.5 rounded-xl text-xs font-semibold border-2 transition-all ${(q.shapes||[]).includes(sh)?'border-blue-500 bg-blue-50 text-blue-700':'border-gray-200 text-gray-500 hover:border-gray-300'}`}>
+                              {sh}
+                            </button>
+                          ))}
+                        </div>
+                        {/* Preview */}
+                        {(q.shapes||[]).length > 0 && (
+                          <div className="flex gap-3 mt-3 flex-wrap p-3 bg-gray-50 rounded-xl border border-gray-100">
+                            {(q.shapes||[]).map((sh,i) => (
+                              <div key={i} dangerouslySetInnerHTML={{__html: shapeSVG(sh, 55)}}/>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Preview answer space */}
+                    {q.type==='written' && (
+                      <div className="mt-2 space-y-1 opacity-40">
+                        {[1,2,3,4].map(i=><div key={i} className="border-b border-gray-400 h-6 w-full"/>)}
+                      </div>
+                    )}
+                    {q.type==='short' && <div className="mt-2 border-b border-gray-400 h-6 w-full opacity-40"/>}
+                    {q.type==='narrow' && (
+                      <div className="mt-2 space-y-0.5 opacity-40">
+                        {Array(q.narrowCount||6).fill(0).map((_,i)=><div key={i} className="border-b border-gray-400 h-4 w-full"/>)}
+                      </div>
+                    )}
+                    {q.type==='math' && (
+                      <div className="mt-2 opacity-50 overflow-x-auto">
+                        <div style={{display:'inline-block',borderTop:'2px solid #888',borderLeft:'2px solid #888'}}>
+                          {Array(q.mathRows||2).fill(0).map((_,r)=>(
+                            <div key={r} style={{display:'flex'}}>
+                              {Array(q.mathCols||4).fill(0).map((_,c)=>(
+                                <div key={c} style={{width:'58px',height:'58px',borderRight:'2px solid #888',borderBottom:'2px solid #888'}}/>
+                              ))}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </Card>
+                ))}
+              </div>
+          }
+
+          {paperQs.length > 0 && (
+            <div className="mt-4 flex justify-end">
+              <Btn onClick={printPaper}>🖨️ Print Question Paper</Btn>
+            </div>
+          )}
         </div>
       )}
     </div>
