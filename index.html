@@ -1514,7 +1514,7 @@ function Fees() {
                                 <td className="px-4 py-3 text-right">
                                   {pay
                                     ? <Btn sm variant="outline" onClick={() => printReceipt(pay, stu)}>🖨️ Receipt</Btn>
-                                    : <Btn sm onClick={() => { setPayMod(stu); setPf({ month: vm, year: vy, amount: String(due||''), discount: '', annualFund: String(stu.annualFund||''), note:'', paymentMethod:'Cash' }); }}>Record Payment</Btn>
+                                    : <Btn sm onClick={() => { setPayMod(stu); setPf({ month: vm, year: vy, amount: String(due||''), discount: '', annualFund: '0', note:'', paymentMethod:'Cash' }); }}>Record Payment</Btn>
                                   }
                                 </td>
                               </tr>
@@ -1770,7 +1770,7 @@ function FeeCollection() {
     const alreadyPaid = paidMap[stu.id]?.total || 0;
     const balance     = Math.max(0, due - alreadyPaid);
     setCollMod({ stu, alreadyPaid, balance });
-    setCf({ month: vm, year: vy, feeAmount: String(balance || due), discount: '', annualFund: String(stu.annualFund||''), note: '', paymentMethod: 'Cash' });
+    setCf({ month: vm, year: vy, feeAmount: String(balance || due), discount: '', annualFund: '0', note: '', paymentMethod: 'Cash' });
   };
 
   const collectFee = () => {
