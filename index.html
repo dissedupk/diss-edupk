@@ -975,11 +975,6 @@ function Students() {
     <div>
       <div className="flex items-center justify-between mb-5">
         <h2 className="text-xl font-bold text-gray-800">Students <span className="text-gray-400 font-normal text-base">({list.length})</span></h2>
-        <div className="flex gap-2 flex-wrap">
-          <Btn variant="outline" onClick={printStudents}>🖨️ Print</Btn>
-          {canAdd && <Btn variant="outline" onClick={openSiblingWindow}>👨‍👧‍👦 Add Siblings</Btn>}
-          {canAdd && <Btn onClick={openAdd}>+ Add Student</Btn>}
-        </div>
       </div>
 
       <Card className="p-3 mb-4">
@@ -1090,6 +1085,13 @@ function Students() {
           </Card>
         )
       }
+
+      {/* ── Action buttons — after last entry ── */}
+      <div className="flex gap-2 flex-wrap mt-4">
+        <Btn variant="outline" onClick={printStudents}>🖨️ Print</Btn>
+        {canAdd && <Btn variant="outline" onClick={openSiblingWindow}>👨‍👧‍👦 Add Siblings</Btn>}
+        {canAdd && <Btn onClick={openAdd}>+ Add Student</Btn>}
+      </div>
 
       {form && (
         <Modal title={form.id ? '✏️ Edit Student' : '🎓 Add New Student'} onClose={() => setForm(null)} xl>
