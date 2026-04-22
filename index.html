@@ -1003,7 +1003,7 @@ function Students() {
 }
 
 // ── INVENTORY ────────────────────────────────────────────────────────────────
-const blankItem = { name:'', type:'Book', qty:0, price:0, threshold:5 };
+const blankItem = { name:'', type:'Book', qty:0, price:0, threshold:5, vendorId:'' };
 
 function Inventory() {
   const { role } = React.useContext(UserContext);
@@ -1019,9 +1019,11 @@ function Inventory() {
   const [histMod, setHistMod]   = useState(null); // item
   const [delId, setDelId]       = useState(null);
   const students = S.get(K.STU, []);
+  const [vendors] = useState(() => S.get(K.VENDOR, []));
 
-  const [sQty, setSQty]   = useState('');
-  const [sNote, setSNote] = useState('');
+  const [sQty, setSQty]       = useState('');
+  const [sNote, setSNote]     = useState('');
+  const [sVendorId, setSVendorId] = useState(''); // vendor for stock-in
   const [iForm, setIForm] = useState({ stuId:'', qty:1, note:'' });
 
   const persistItems = (data) => { S.set(K.INV, data); setItems(data); };
@@ -1031,9 +1033,17 @@ function Inventory() {
     if (!form.name.trim()) return alert('Item name is required.');
     const qty = Math.max(0, Number(form.qty) || 0); // ← never negative
     if (Number(form.qty) < 0) return alert('⚠️ Stock quantity cannot be negative. Minimum is 0.');
-    const item = { ...form, qty, price: Math.max(0, Number(form.price)), threshold: Math.max(0, Number(form.threshold)) };
-    const updated = form.id ? items.map(i => i.id === form.id ? item : i) : [...items, { ...item, id: uid() }];
+    const itemId = form.id || uid();
+    const item = { ...form, id: itemId, qty, price: Math.max(0, Number(form.price)), threshold: Math.max(0, Number(form.threshold)) };
+    const updated = form.id ? items.map(i => i.id === form.id ? item : i) : [...items, item];
     persistItems(updated);
+    // If new item with initial qty AND a vendor selected → add to vendor ledger
+    if (!form.id && qty > 0 && form.vendorId) {
+      const price = Math.max(0, Number(form.price));
+      const sbook = S.get(K.SBOOK, []);
+      const delivery = { id: uid(), vendorId: form.vendorId, name: form.name.trim(), cls: 'INV', qty, price, year: NOW.getFullYear(), note: 'Initial stock entry', invItem: true, date: new Date().toISOString() };
+      S.set(K.SBOOK, [...sbook, delivery]);
+    }
     setForm(null);
   };
 
@@ -1047,10 +1057,17 @@ function Inventory() {
     const newQty = stockMod.mode === 'in' ? Number(stockMod.item.qty) + qty : Number(stockMod.item.qty) - qty;
     if (newQty < 0) return alert('⚠️ Stock cannot go negative.');
     const updatedItems = items.map(i => i.id === stockMod.item.id ? { ...i, qty: newQty } : i);
-    const newTx = { id: uid(), itemId: stockMod.item.id, type: stockMod.mode, qty, date: new Date().toISOString(), note: sNote };
+    const newTx = { id: uid(), itemId: stockMod.item.id, type: stockMod.mode, qty, date: new Date().toISOString(), note: sNote, vendorId: stockMod.mode === 'in' ? (sVendorId || '') : '' };
     persistItems(updatedItems);
     persistTxs([...txs, newTx]);
-    setStockMod(null); setSQty(''); setSNote('');
+    // If stock-in from a vendor, add to vendor ledger (SBOOK/inventory deliveries)
+    if (stockMod.mode === 'in' && sVendorId) {
+      const price = Number(stockMod.item.price) || 0;
+      const sbook = S.get(K.SBOOK, []);
+      const delivery = { id: uid(), vendorId: sVendorId, name: stockMod.item.name, cls: 'INV', qty, price, year: NOW.getFullYear(), note: sNote || 'Inventory delivery', invItem: true, date: new Date().toISOString() };
+      S.set(K.SBOOK, [...sbook, delivery]);
+    }
+    setStockMod(null); setSQty(''); setSNote(''); setSVendorId('');
   };
 
   const doIssue = () => {
@@ -1155,6 +1172,23 @@ function Inventory() {
           <Inp label="Quantity" type="number" min="0" value={form.qty} onChange={e => setForm({...form, qty: e.target.value})}/>
           <Inp label="Price per Unit (Rs.)" type="number" min="0" value={form.price} onChange={e => setForm({...form, price: e.target.value})}/>
           <Inp label="Low Stock Alert Threshold" type="number" min="1" value={form.threshold} onChange={e => setForm({...form, threshold: e.target.value})}/>
+          {vendors.length > 0 && (
+            <div className="mb-3">
+              <label className="block text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wide">Vendor / Supplier (optional)</label>
+              <select value={form.vendorId||''} onChange={e => setForm({...form, vendorId: e.target.value})} className={inputCls}>
+                <option value="">— No vendor —</option>
+                {vendors.map(v => <option key={v.id} value={v.id}>{v.name}{v.contact ? ' · '+v.contact : ''}</option>)}
+              </select>
+              {!form.id && form.vendorId && Number(form.qty) > 0 && (
+                <p className="text-xs text-blue-600 mt-1">📦 Initial stock (qty × price = Rs. {(Number(form.qty)*Number(form.price||0)).toLocaleString()}) will be added to vendor's ledger.</p>
+              )}
+            </div>
+          )}
+          {vendors.length === 0 && !form.id && (
+            <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 mb-3 text-xs text-blue-700">
+              💡 Add vendors in <strong>Vendors &amp; Books</strong> tab to link inventory to supplier accounts.
+            </div>
+          )}
           <div className="flex gap-2 mt-5">
             <Btn full onClick={saveItem}>{form.id ? 'Update Item' : 'Save Item'}</Btn>
             <Btn variant="outline" onClick={() => setForm(null)}>Cancel</Btn>
@@ -1191,6 +1225,21 @@ function Inventory() {
                 {Math.max(0, Number(stockMod.item.qty) - Number(sQty))} units
               </strong>
             </p>
+          )}
+          {stockMod.mode === 'in' && vendors.length > 0 && (
+            <div className="mb-3">
+              <label className="block text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wide">Vendor (optional)</label>
+              <select value={sVendorId} onChange={e => setSVendorId(e.target.value)} className={inputCls}>
+                <option value="">— No vendor / walk-in —</option>
+                {vendors.map(v => <option key={v.id} value={v.id}>{v.name}{v.contact ? ' · '+v.contact : ''}</option>)}
+              </select>
+              {sVendorId && <p className="text-xs text-blue-600 mt-1">📦 This delivery will be added to vendor's ledger automatically.</p>}
+            </div>
+          )}
+          {stockMod.mode === 'in' && vendors.length === 0 && (
+            <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 mb-3 text-xs text-blue-700">
+              💡 Go to <strong>Vendors &amp; Books</strong> tab to add vendors — then stock deliveries will be linked to their ledger.
+            </div>
           )}
           <Inp label="Note (optional)" value={sNote} onChange={e => setSNote(e.target.value)} placeholder="Reason or reference number"/>
           <div className="flex gap-2 mt-5">
@@ -1751,8 +1800,13 @@ function FeeCollection() {
     const due  = Number(classFees[stu.cls] || 0);
     const info = paidMap[stu.id];
     const paid = info ? info.total : 0;
-    if (paid <= 0)              return 'unpaid';
-    if (due > 0 && paid < due) return 'partial';
+    if (paid <= 0) return 'unpaid';
+    // Net due = class fee − discounts (so discounted students show correct status)
+    const stuRate   = Number(stu.annualFund || 0);
+    const autoDisc  = stuRate > 0 && stuRate < due ? due - stuRate : 0;
+    const totalDisc = info ? info.totalDisc : autoDisc;
+    const netDue    = Math.max(0, due - totalDisc);
+    if (netDue > 0 && paid < netDue) return 'partial';
     return 'paid';
   };
 
@@ -1763,7 +1817,11 @@ function FeeCollection() {
              (fcls === 'All' || s.cls === fcls);
     }), [students, search, fcls]);
 
-  const netPayable = () => Math.max(0, Number(cf.feeAmount||0) - Number(cf.discount||0));
+  // Discount applies to CLASS FEE → student net fee = classFee - discount
+  // Amount received is separate — balance = studentNetFee - amountReceived
+  const classDueForModal = () => Number(classFees[collMod?.stu?.cls] || 0);
+  const studentNetFee    = () => Math.max(0, classDueForModal() - Number(cf.discount||0));
+  const netPayable       = () => Number(cf.feeAmount || 0); // actual money being collected now
 
   const openCollect = (stu) => {
     const due         = Number(classFees[stu.cls] || 0);
@@ -1780,13 +1838,15 @@ function FeeCollection() {
   const collectFee = () => {
     const fee  = Number(cf.feeAmount || 0);
     const disc = Number(cf.discount || 0);
+    const due  = Number(classFees[collMod.stu.cls] || 0);
     if (fee <= 0) return alert('Enter a valid amount received.');
-    if (disc > fee) return alert('Discount cannot exceed the fee amount.');
-    const net = Math.max(0, fee - disc);
+    if (disc > due) return alert('Discount cannot exceed the class fee.');
     const pay = {
       id: uid(), stuId: collMod.stu.id,
       month: Number(cf.month), year: Number(cf.year),
-      amount: net, discount: disc,
+      amount: fee,      // actual money received from student
+      discount: disc,   // discount deducted from class fee
+      classFee: due,    // class fee at time of payment (for receipt)
       annualFund: Number(cf.annualFund||0),
       note: cf.note, paymentMethod: cf.paymentMethod || 'Cash',
       date: new Date().toISOString(),
@@ -1799,10 +1859,13 @@ function FeeCollection() {
   };
 
   const printReceipt = (pay, stu) => {
-    const origFee = Number(pay.amount) + Number(pay.discount||0);
-    const disc = Number(pay.discount||0);
-    const net  = Number(pay.amount);
-    const af   = Number(pay.annualFund||0);
+    const disc     = Number(pay.discount||0);
+    const received = Number(pay.amount);  // actual money received
+    const af       = Number(pay.annualFund||0);
+    // classFee stored in new records; fallback for old records = amount + discount
+    const origFee  = Number(pay.classFee||0) || (received + disc);
+    const net      = Math.max(0, origFee - disc); // student net fee
+    const balAmt   = net - received; // positive = still owes, negative = advance
     const win = window.open('', '_blank', 'width=420,height=680');
     win.document.write(`<!DOCTYPE html><html><head><title>Fee Receipt</title>
       <style>
@@ -1840,14 +1903,17 @@ function FeeCollection() {
         ${stu.family ? `<div><div class="label">Family</div><div class="value">${stu.family}</div></div>` : ''}
       </div>
       <hr class="divider"/>
-      <div class="fee-row"><span>Amount Received</span><span>Rs. ${origFee.toLocaleString()}</span></div>
+      <div class="fee-row"><span>Class Fee</span><span>Rs. ${origFee.toLocaleString()}</span></div>
       ${disc > 0 ? `<div class="disc-row"><span>Discount</span><span>- Rs. ${disc.toLocaleString()}</span></div>` : ''}
-      ${disc > 0 ? `<div class="net-row"><span>Net Fee</span><span>Rs. ${net.toLocaleString()}</span></div>` : ''}
+      ${disc > 0 ? `<div class="net-row"><span>Student Net Fee</span><span>Rs. ${net.toLocaleString()}</span></div>` : ''}
+      <div class="fee-row"><span>Amount Received</span><span>Rs. ${received.toLocaleString()}</span></div>
       ${af > 0 ? `<div class="fee-row"><span>Annual Fund</span><span>Rs. ${af.toLocaleString()}</span></div>` : ''}
       ${disc > 0 ? `<div class="disc-badge">✓ Discount Applied: Rs. ${disc.toLocaleString()}</div>` : ''}
+      ${balAmt > 0 ? `<div class="disc-row" style="color:#dc2626"><span>Balance Remaining</span><span>Rs. ${balAmt.toLocaleString()}</span></div>` : ''}
+      ${balAmt < 0 ? `<div class="net-row" style="color:#059669"><span>Advance Paid</span><span>Rs. ${Math.abs(balAmt).toLocaleString()}</span></div>` : ''}
       <div class="total">
-        <span class="total-label">Total Paid</span>
-        <span class="total-val">Rs. ${(net + af).toLocaleString()}</span>
+        <span class="total-label">Total Collected</span>
+        <span class="total-val">Rs. ${(received + af).toLocaleString()}</span>
       </div>
       ${pay.note ? `<p style="font-size:11px;color:#6b7280;margin-top:4px">Note: ${pay.note}</p>` : ''}
       <hr class="divider"/>
@@ -2528,13 +2594,25 @@ function FeeCollection() {
             onChange={e => setCf({...cf, feeAmount: e.target.value})} placeholder="Enter amount received now"/>
           <Inp label="Discount (Rs.)" type="number" min="0" value={cf.discount}
             onChange={e => setCf({...cf, discount: e.target.value})} placeholder="0 if no discount"/>
-          {Number(cf.discount) > 0 && (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-3 text-sm">
-              <div className="flex justify-between text-gray-600 mb-1"><span>Amount:</span><span className="font-semibold">Rs. {Number(cf.feeAmount||0).toLocaleString()}</span></div>
-              <div className="flex justify-between text-red-600 mb-1"><span>Discount:</span><span className="font-semibold">- Rs. {Number(cf.discount||0).toLocaleString()}</span></div>
-              <div className="flex justify-between font-bold text-emerald-700 border-t border-amber-200 pt-1"><span>Net Payable:</span><span>Rs. {netPayable().toLocaleString()}</span></div>
-            </div>
-          )}
+          {Number(cf.discount) > 0 && (() => {
+            const due2      = classDueForModal();
+            const disc2     = Number(cf.discount || 0);
+            const netFee2   = studentNetFee();
+            const received2 = Number(cf.feeAmount || 0);
+            const bal2      = netFee2 - received2;
+            return (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-3 text-sm">
+                <div className="flex justify-between text-gray-600 mb-1"><span>Class Fee:</span><span className="font-semibold">Rs. {due2.toLocaleString()}</span></div>
+                <div className="flex justify-between text-red-600 mb-1"><span>Discount:</span><span className="font-semibold">− Rs. {disc2.toLocaleString()}</span></div>
+                <div className="flex justify-between text-blue-700 font-bold border-t border-amber-200 pt-1 mb-1"><span>Student Net Fee:</span><span>Rs. {netFee2.toLocaleString()}</span></div>
+                {received2 > 0 && <div className="flex justify-between text-gray-600 mb-1"><span>Receiving Now:</span><span className="font-semibold">Rs. {received2.toLocaleString()}</span></div>}
+                {received2 > 0 && <div className={`flex justify-between font-bold border-t border-amber-200 pt-1 ${bal2 > 0 ? 'text-red-600' : bal2 < 0 ? 'text-emerald-700' : 'text-gray-500'}`}>
+                  <span>{bal2 > 0 ? 'Balance Remaining:' : bal2 < 0 ? 'Advance:' : '✅ Fully Paid'}</span>
+                  <span>Rs. {Math.abs(bal2).toLocaleString()}</span>
+                </div>}
+              </div>
+            );
+          })()}
           <Inp label="Annual Fund (Rs.)" type="number" min="0" value={cf.annualFund}
             onChange={e => setCf({...cf, annualFund: e.target.value})} placeholder="0 if not applicable"/>
           <Inp label="Remarks / Note (optional)" value={cf.note}
@@ -4692,11 +4770,17 @@ function VendorBooks() {
         const vledgerId = selVL || (vendors[0]?.id || '');
         const vendor = vendors.find(v => v.id === vledgerId);
         if (vendors.length === 0) return <Empty icon="🏪" text="No vendors added yet. Add vendors first."/>;
-        // Build ledger entries
+        // Build ledger entries (books + inventory deliveries)
         const entries = [];
         books.filter(b => b.vendorId === vledgerId).forEach(b => {
           const amt = Number(b.qty||0) * Number(b.price||0);
-          if (amt > 0) entries.push({ date: String(b.year)+'-01-01', desc: `Stock In — ${b.name} (Class ${b.cls}, Session ${b.year})`, qty: Number(b.qty||0), rate: Number(b.price||0), dr: 0, cr: amt, type: 'in' });
+          if (b.invItem) {
+            // Inventory delivery (from Inventory module Stock In)
+            const entryDate = b.date || (String(b.year)+'-01-01');
+            if (amt > 0 || Number(b.qty||0) > 0) entries.push({ date: entryDate, desc: `📦 Inventory — ${b.name} (${b.note||'Stock In'})`, qty: Number(b.qty||0), rate: Number(b.price||0), dr: 0, cr: amt, type: 'inv' });
+          } else {
+            if (amt > 0) entries.push({ date: String(b.year)+'-01-01', desc: `📚 Books — ${b.name} (Class ${b.cls}, Session ${b.year})`, qty: Number(b.qty||0), rate: Number(b.price||0), dr: 0, cr: amt, type: 'in' });
+          }
         });
         vpays.filter(p => p.vendorId === vledgerId).forEach(p => {
           entries.push({ date: p.date, desc: `Payment — ${p.rcpt}${p.note?' | '+p.note:''}`, qty: 0, rate: 0, dr: Number(p.amount||0), cr: 0, type: 'pay' });
@@ -4718,7 +4802,7 @@ function VendorBooks() {
               <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
                 <p className="text-xs text-blue-500 font-semibold uppercase mb-1">📦 Total Supplied (Cr)</p>
                 <p className="text-xl font-extrabold text-blue-700">Rs. {totalCr.toLocaleString()}</p>
-                <p className="text-xs text-gray-400 mt-0.5">Books purchased from vendor</p>
+                <p className="text-xs text-gray-400 mt-0.5">Books &amp; inventory received from vendor</p>
               </div>
               <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
                 <p className="text-xs text-emerald-600 font-semibold uppercase mb-1">💳 Total Paid (Dr)</p>
