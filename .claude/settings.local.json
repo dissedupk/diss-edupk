@@ -49,7 +49,9 @@
       "Bash(powershell.exe -Command \"Copy-Item 'C:\\\\Users\\\\Tajmmul\\\\OneDrive\\\\Documents\\\\claude ai\\\\tataheer traders\\\\index.html' 'C:\\\\Users\\\\Tajmmul\\\\OneDrive\\\\Documents\\\\claude ai\\\\tataheer traders\\\\diss-app\\\\index.html' -Force; cd 'C:\\\\Users\\\\Tajmmul\\\\OneDrive\\\\Documents\\\\claude ai\\\\tataheer traders'; git add 'index.html' 'diss-app/index.html'; git commit -m 'update Paper: notebook English/Urdu lines with red+blue ruled style, adjustable line count'; git push origin main 2>&1\")",
       "Bash(powershell.exe -Command \"Copy-Item 'C:\\\\Users\\\\Tajmmul\\\\OneDrive\\\\Documents\\\\claude ai\\\\tataheer traders\\\\index.html' 'C:\\\\Users\\\\Tajmmul\\\\OneDrive\\\\Documents\\\\claude ai\\\\tataheer traders\\\\diss-app\\\\index.html' -Force; cd 'C:\\\\Users\\\\Tajmmul\\\\OneDrive\\\\Documents\\\\claude ai\\\\tataheer traders'; git add 'index.html' 'diss-app/index.html'; git commit -m 'fix paper print: A4 size, footer at bottom with sig lines'; git push origin main 2>&1\")",
       "Bash(node -e ' *)",
-      "Bash(dir \"C:\\\\Users\\\\Tajmmul\\\\OneDrive\\\\Documents\\\\claude ai\\\\tataheer traders\\\\index.html\")"
+      "Bash(dir \"C:\\\\Users\\\\Tajmmul\\\\OneDrive\\\\Documents\\\\claude ai\\\\tataheer traders\\\\index.html\")",
+      "Bash(dir \"C:\\\\Users\\\\Tajmmul\\\\OneDrive\\\\Documents\\\\claude ai\\\\tataheer traders\\\\diss-app\\\\\" 2>&1)",
+      "Bash(copy \"C:\\\\Users\\\\Tajmmul\\\\OneDrive\\\\Documents\\\\claude ai\\\\tataheer traders\\\\index.html\" \"C:\\\\Users\\\\Tajmmul\\\\OneDrive\\\\Documents\\\\claude ai\\\\tataheer traders\\\\diss-app\\\\index.html\")"
     ]
   }
 }

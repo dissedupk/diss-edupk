@@ -268,10 +268,10 @@ const MONTHS  = ['January','February','March','April','May','June','July','Augus
 const NOW     = new Date();
 
 // ── Shared UI ────────────────────────────────────────────────────────────────
-function Modal({ title, onClose, children, wide = false }) {
+function Modal({ title, onClose, children, wide = false, xl = false }) {
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-3">
-      <div className={`bg-white rounded-2xl shadow-2xl w-full ${wide ? 'max-w-2xl' : 'max-w-md'} max-h-[92vh] flex flex-col`}>
+      <div className={`bg-white rounded-2xl shadow-2xl w-full ${xl ? 'max-w-4xl' : wide ? 'max-w-2xl' : 'max-w-md'} max-h-[95vh] flex flex-col`}>
         <div className="flex items-center justify-between px-5 py-4 border-b shrink-0">
           <h3 className="text-base font-bold text-gray-800">{title}</h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-2xl leading-none w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100">&times;</button>
@@ -785,7 +785,259 @@ function Dashboard({ setPage }) {
 }
 
 // ── STUDENTS ─────────────────────────────────────────────────────────────────
-const blankStu = { name:'', father:'', cls:'1', roll:'', annualFund:'', contact:'', address:'', family:'', familyId:'', siblingDiscount:'', photo:'' };
+const blankStu = { name:'', father:'', cls:'1', roll:'', monthlyFee:'', annualFund:'', openingBalance:'', contact:'', address:'', family:'', familyId:'', siblingDiscount:'', photo:'' };
+
+// ── Sibling Registration — opens separate popup window ──────────────────────
+function openSiblingWindow() {
+  const classes    = JSON.stringify(CLASSES);
+  const classFees  = JSON.stringify(S.get(K.CF, {}));
+  const win = window.open('', '_blank', 'width=900,height=820,scrollbars=yes,resizable=yes');
+  win.document.write(`<!DOCTYPE html><html><head><title>Add New Student — DISS</title>
+  <meta charset="utf-8"/>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Segoe UI',Arial,sans-serif;background:#f1f5f9;padding:20px;color:#1a1a1a}
+    .hdr{text-align:center;margin-bottom:18px;padding-bottom:14px;border-bottom:3px solid #c0392b}
+    .hdr h1{font-size:20px;color:#c0392b;font-weight:800;letter-spacing:1px}
+    .hdr p{font-size:12px;color:#6b7280;margin-top:4px}
+    .card{background:#fff;border-radius:14px;padding:18px;margin-bottom:14px;box-shadow:0 1px 4px rgba(0,0,0,0.08)}
+    .card h2{font-size:13px;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #f3f4f6}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+    label{display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+    input,select{width:100%;border:2px solid #e5e7eb;border-radius:8px;padding:8px 12px;font-size:13px;outline:none;transition:.2s}
+    input:focus,select:focus{border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.1)}
+    .preview{font-size:11px;margin-top:5px;padding:6px 10px;border-radius:7px;font-weight:600;min-height:24px}
+    .preview.green{background:#d1fae5;color:#065f46;border:1px solid #6ee7b7}
+    .preview.amber{background:#fef3c7;color:#92400e;border:1px solid #fcd34d}
+    .preview.gray{background:#f3f4f6;color:#6b7280;border:1px solid #e5e7eb}
+    .sib-row{display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:8px;align-items:center;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px;margin-bottom:8px}
+    .btn{padding:10px 20px;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;transition:.2s}
+    .btn-blue{background:#3b82f6;color:#fff}.btn-blue:hover{background:#2563eb}
+    .btn-green{background:#10b981;color:#fff;width:100%;padding:14px;font-size:15px}.btn-green:hover{background:#059669}
+    .btn-red{background:#ef4444;color:#fff;padding:6px 10px;font-size:12px}.btn-red:hover{background:#dc2626}
+    .msg{padding:10px 14px;border-radius:8px;font-size:13px;font-weight:600;margin-bottom:12px;display:none}
+    .msg.success{background:#d1fae5;color:#065f46;border:1px solid #6ee7b7;display:block}
+    .msg.error{background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;display:block}
+    .sibs-header{display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:8px;margin-bottom:4px;padding:0 10px}
+    .sibs-header span{font-size:10px;font-weight:700;color:#9ca3af;text-transform:uppercase}
+  </style></head><body>
+  <div class="hdr">
+    <h1>🎓 Add New Student</h1>
+    <p>Single student or full siblings family — common info entered once</p>
+  </div>
+  <div id="msg" class="msg"></div>
+
+  <div class="card">
+    <h2>👨 Common Family Details</h2>
+    <div class="grid2" style="margin-bottom:10px">
+      <div><label>Father's Name *</label><input id="father" placeholder="Father's full name"/></div>
+      <div><label>Family Name</label><input id="family" placeholder="e.g. Khan Family"/></div>
+    </div>
+    <div class="grid3">
+      <div><label>Family ID</label><input id="familyId" placeholder="e.g. F-001"/></div>
+      <div><label>Contact Number</label><input id="contact" placeholder="0321-1234567"/></div>
+      <div><label>Address</label><input id="address" placeholder="Home address"/></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>💰 Fee & Financial Details</h2>
+    <div class="grid3">
+      <div>
+        <label>Monthly Fee (Rs.) — student's actual rate</label>
+        <input id="monthlyFee" type="number" min="0" placeholder="0 = pays full class fee"/>
+        <div id="mfPreview" class="preview gray">—</div>
+      </div>
+      <div>
+        <label>Annual Fund (Rs.) — TOTAL for all siblings</label>
+        <input id="annualFund" type="number" min="0" placeholder="e.g. 5000 for whole family"/>
+        <div id="afPreview" class="preview gray">—</div>
+      </div>
+      <div>
+        <label>Sibling Discount (Rs./month) — TOTAL for all siblings</label>
+        <input id="sibDisc" type="number" min="0" placeholder="e.g. 4000 total"/>
+        <div id="sdPreview" class="preview gray">—</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>👦👧 Students — Add Each Child</h2>
+    <div class="sibs-header">
+      <span>Full Name *</span><span>Class *</span><span>Roll No *</span><span></span>
+    </div>
+    <div id="sibRows"></div>
+    <button class="btn btn-blue" onclick="addRow()" style="margin-top:8px">+ Add Another Student</button>
+  </div>
+
+  <button class="btn btn-green" onclick="saveAll()">✅ Save & Add to System</button>
+  <p style="text-align:center;font-size:11px;color:#9ca3af;margin-top:10px">Window closes automatically after saving.</p>
+
+  <script>
+    const CLASSES   = ${classes};
+    const CLASS_FEES = ${classFees};
+    let rowCount = 0;
+
+    function getSibCount() {
+      var n = document.querySelectorAll('.sib-row').length;
+      return n > 0 ? n : 1;
+    }
+
+    function updatePreviews() {
+      var mFee  = parseFloat(document.getElementById('monthlyFee').value) || 0;
+      var af    = parseFloat(document.getElementById('annualFund').value)  || 0;
+      var sibD  = parseFloat(document.getElementById('sibDisc').value)     || 0;
+      var count = getSibCount();
+
+      // ── Monthly Fee → auto discount ──
+      var firstSel = document.querySelector('.sib-row select');
+      var firstCls = firstSel ? firstSel.value : '';
+      var classFee = parseFloat(CLASS_FEES[firstCls]) || 0;
+      var mfEl = document.getElementById('mfPreview');
+      if (mFee > 0 && classFee > 0) {
+        var disc = classFee - mFee;
+        if (disc > 0) {
+          mfEl.className = 'preview green';
+          mfEl.textContent = 'Rs.'+classFee+' class fee  −  Rs.'+disc+' discount  =  Rs.'+mFee+' student pays ✅';
+        } else if (disc === 0) {
+          mfEl.className = 'preview gray';
+          mfEl.textContent = 'Paying full class fee — no discount';
+        } else {
+          mfEl.className = 'preview amber';
+          mfEl.textContent = '⚠️ Amount is more than class fee (Rs.'+classFee+')';
+        }
+      } else if (mFee === 0) {
+        mfEl.className = 'preview gray';
+        mfEl.textContent = 'Blank = pays full class fee';
+      } else {
+        mfEl.className = 'preview gray';
+        mfEl.textContent = 'Class fee not set — discount will auto-calc from system';
+      }
+
+      // ── Annual Fund → divide by sibling count ──
+      var afEl = document.getElementById('afPreview');
+      if (af > 0) {
+        var afEach = Math.round(af / count);
+        afEl.className = 'preview green';
+        if (count > 1) {
+          afEl.textContent = 'Rs.'+af+' total  ÷  '+count+' students  =  Rs.'+afEach+' each ✅';
+        } else {
+          afEl.textContent = 'Rs.'+af+' for this student ✅  (add more students to auto-divide)';
+        }
+      } else {
+        afEl.className = 'preview gray';
+        afEl.textContent = 'Enter total AF for whole family — auto-divided equally';
+      }
+
+      // ── Sibling Discount → divide by sibling count ──
+      var sdEl = document.getElementById('sdPreview');
+      if (sibD > 0) {
+        var sdEach = Math.round(sibD / count);
+        sdEl.className = 'preview green';
+        if (count > 1) {
+          sdEl.textContent = 'Rs.'+sibD+' total  ÷  '+count+' students  =  Rs.'+sdEach+' each ✅';
+        } else {
+          sdEl.textContent = 'Rs.'+sibD+' for this student ✅  (add more students to auto-divide)';
+        }
+      } else {
+        sdEl.className = 'preview gray';
+        sdEl.textContent = 'Enter total discount — auto-divided equally among all students';
+      }
+    }
+
+    function clsOpts(sel) {
+      return CLASSES.map(c => '<option value="'+c+'"'+(sel===c?' selected':'')+'>Class '+c+'</option>').join('');
+    }
+    function addRow(name, cls, roll) {
+      rowCount++;
+      const n = rowCount;
+      const div = document.createElement('div');
+      div.className = 'sib-row';
+      div.id = 'row'+n;
+      div.innerHTML = '<input id="sname'+n+'" placeholder="Student full name" value="'+(name||'')+'"/>'
+        +'<select id="scls'+n+'" onchange="updatePreviews()">'+clsOpts(cls||'1')+'</select>'
+        +'<input id="sroll'+n+'" placeholder="e.g. 101" value="'+(roll||'')+'"/>'
+        +'<button class="btn btn-red" onclick="removeRow('+n+')" title="Remove">✕</button>';
+      document.getElementById('sibRows').appendChild(div);
+      updatePreviews();
+    }
+    function removeRow(n) {
+      const el = document.getElementById('row'+n);
+      if (el) { el.remove(); updatePreviews(); }
+    }
+    function showMsg(txt, type) {
+      const el = document.getElementById('msg');
+      el.textContent = txt; el.className = 'msg '+type;
+      setTimeout(() => el.className='msg', 4000);
+    }
+    function saveAll() {
+      const father   = document.getElementById('father').value.trim();
+      const family   = document.getElementById('family').value.trim();
+      const familyId = document.getElementById('familyId').value.trim();
+      const contact  = document.getElementById('contact').value.trim();
+      const address  = document.getElementById('address').value.trim();
+      const mFee     = document.getElementById('monthlyFee').value;
+      const afTotal  = Number(document.getElementById('annualFund').value) || 0;
+      const sdTotal  = Number(document.getElementById('sibDisc').value) || 0;
+      if (!father) { showMsg('❌ Father Name is required.', 'error'); return; }
+      const rows = document.querySelectorAll('.sib-row');
+      const siblings = [];
+      let ok = true;
+      rows.forEach(row => {
+        const id   = row.id.replace('row','');
+        const name = document.getElementById('sname'+id)?.value.trim();
+        const cls  = document.getElementById('scls'+id)?.value;
+        const roll = document.getElementById('sroll'+id)?.value.trim();
+        if (!name || !roll) { ok=false; return; }
+        siblings.push({ name, cls, roll });
+      });
+      if (!ok || siblings.length === 0) { showMsg('❌ Fill all student names and roll numbers.', 'error'); return; }
+      // Divide annual fund & sibling discount equally among all siblings
+      const count    = siblings.length;
+      const afEach   = count > 0 ? Math.round(afTotal / count) : afTotal;
+      const sdEach   = count > 0 ? Math.round(sdTotal / count) : sdTotal;
+      const existing = JSON.parse(localStorage.getItem('sms_stu') || '[]');
+      const uid      = () => Math.random().toString(36).slice(2,10)+Date.now().toString(36);
+      const newStudents = siblings.map(s => ({
+        id: uid(), name: s.name, father, cls: s.cls, roll: s.roll,
+        monthlyFee: mFee||'',
+        annualFund: afEach > 0 ? String(afEach) : '',
+        openingBalance: '', contact, address,
+        family: family || (father+' Family'),
+        familyId,
+        siblingDiscount: sdEach > 0 ? String(sdEach) : '',
+        photo: ''
+      }));
+      const updated = [...existing, ...newStudents];
+      localStorage.setItem('sms_stu', JSON.stringify(updated));
+      // ── Replace entire page immediately so form can't be resubmitted ──
+      document.body.innerHTML = '<div style="text-align:center;padding:80px 40px;font-family:\'Segoe UI\',sans-serif;background:#f0fdf4;min-height:100vh">'
+        +'<div style="font-size:72px;margin-bottom:20px">✅</div>'
+        +'<h2 style="color:#059669;font-size:28px;font-weight:800;margin-bottom:12px">'+newStudents.length+' Student(s) Saved!</h2>'
+        +'<p style="color:#6b7280;font-size:15px;margin-bottom:8px">Annual Fund: Rs.'+afEach+' each &nbsp;|&nbsp; Sibling Discount: Rs.'+sdEach+' each</p>'
+        +'<p style="color:#9ca3af;font-size:13px;margin-bottom:30px">Main window is refreshing… This window will close automatically.</p>'
+        +'<button onclick="window.close()" style="padding:14px 36px;background:#10b981;color:#fff;border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;box-shadow:0 4px 12px rgba(16,185,129,.3)">✕ Close Window</button>'
+        +'</div>';
+      // Reload parent + close this window (try multiple times)
+      try { if (window.opener && !window.opener.closed) window.opener.location.reload(); } catch(e) {}
+      window.close();
+      setTimeout(function(){ window.close(); }, 500);
+      setTimeout(function(){ window.close(); }, 1500);
+      setTimeout(function(){ window.close(); }, 3000);
+    }
+    // Start with 1 row FIRST — must run before anything else
+    addRow();
+    updatePreviews();
+    // Attach live preview listeners
+    try {
+      document.getElementById('monthlyFee').addEventListener('input', updatePreviews);
+      document.getElementById('annualFund').addEventListener('input', updatePreviews);
+      document.getElementById('sibDisc').addEventListener('input', updatePreviews);
+    } catch(e) {}
+  <\/script></body></html>`);
+  win.document.close();
+}
 
 function Students() {
   const { role } = React.useContext(UserContext);
@@ -835,10 +1087,6 @@ function Students() {
     <div>
       <div className="flex items-center justify-between mb-5">
         <h2 className="text-xl font-bold text-gray-800">Students <span className="text-gray-400 font-normal text-base">({list.length})</span></h2>
-        <div className="flex gap-2">
-          <Btn variant="outline" onClick={printStudents}>🖨️ Print</Btn>
-          {canAdd && <Btn onClick={openAdd}>+ Add Student</Btn>}
-        </div>
       </div>
 
       <Card className="p-3 mb-4">
@@ -950,20 +1198,75 @@ function Students() {
         )
       }
 
+      {/* ── Action buttons — after last entry ── */}
+      <div className="flex gap-2 flex-wrap mt-4">
+        <Btn variant="outline" onClick={printStudents}>🖨️ Print</Btn>
+        {canAdd && <Btn onClick={openSiblingWindow}>+ Add New Student</Btn>}
+      </div>
+
       {form && (
-        <Modal title={form.id ? 'Edit Student' : 'Add New Student'} onClose={() => setForm(null)}>
-          <Inp label="Student Full Name *" value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="Student full name"/>
-          <Inp label="Father's Name *" value={form.father||''} onChange={e => setForm({...form, father: e.target.value})} placeholder="Father's full name"/>
-          <Sel label="Class *" value={form.cls} onChange={e => setForm({...form, cls: e.target.value})} options={CLASSES.map(c => ({v:c, l:`Class ${c}`}))}/>
-          <Inp label="Roll Number *" value={form.roll} onChange={e => setForm({...form, roll: e.target.value})} placeholder="e.g. 101"/>
-          <Inp label="Annual Fund (Rs.)" type="number" min="0" value={form.annualFund||''} onChange={e => setForm({...form, annualFund: e.target.value})} placeholder="e.g. 500 — leave blank if not applicable"/>
-          <div className="flex gap-2">
-            <div className="flex-1"><Inp label="Family Name (for siblings)" value={form.family||''} onChange={e => setForm({...form, family: e.target.value})} placeholder="e.g. Khan Family — same for all siblings"/></div>
-            <div style={{width:130}}><Inp label="Family ID / Serial No." value={form.familyId||''} onChange={e => setForm({...form, familyId: e.target.value})} placeholder="e.g. F-001"/></div>
+        <Modal title={form.id ? '✏️ Edit Student' : '🎓 Add New Student'} onClose={() => setForm(null)} xl>
+          {/* ── Row 1: Basic Info ── */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-0">
+            <Inp label="Student Full Name *" value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="Student full name"/>
+            <Inp label="Father's Name *" value={form.father||''} onChange={e => setForm({...form, father: e.target.value})} placeholder="Father's full name"/>
           </div>
-          <Inp label="Sibling Discount (Rs./month)" type="number" min="0" value={form.siblingDiscount||''} onChange={e => setForm({...form, siblingDiscount: e.target.value})} placeholder="Monthly discount for being a sibling — 0 if none"/>
-          <Inp label="Contact Number" value={form.contact} onChange={e => setForm({...form, contact: e.target.value})} placeholder="e.g. 0321-1234567"/>
-          <Inp label="Address" value={form.address} onChange={e => setForm({...form, address: e.target.value})} placeholder="Home address"/>
+          {/* ── Row 2: Class / Roll ── */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-0">
+            <Sel label="Class *" value={form.cls} onChange={e => setForm({...form, cls: e.target.value})} options={CLASSES.map(c => ({v:c, l:`Class ${c}`}))}/>
+            <Inp label="Roll Number *" value={form.roll} onChange={e => setForm({...form, roll: e.target.value})} placeholder="e.g. 101"/>
+          </div>
+          {/* ── Row 3: Monthly Fee (student rate) — auto-calculates discount ── */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-0">
+            <div>
+              <Inp label="Monthly Fee (Rs.) — Student's Actual Rate" type="number" min="0" value={form.monthlyFee||''} onChange={e => setForm({...form, monthlyFee: e.target.value})} placeholder="Leave blank = pay full class fee"/>
+              {(() => {
+                const classFees = S.get(K.CF, {});
+                const classDue  = Number(classFees[form.cls] || 0);
+                const stuFee    = Number(form.monthlyFee || 0);
+                const autoDisc  = stuFee > 0 && stuFee < classDue ? classDue - stuFee : 0;
+                if (!classDue) return <p className="text-xs text-gray-400 mt-1 mb-2">Set class fee in Fee Settings to see auto-discount.</p>;
+                if (stuFee > classDue) return <p className="text-xs text-red-500 mt-1 mb-2">⚠️ Student fee cannot exceed class fee (Rs. {classDue.toLocaleString()}).</p>;
+                if (autoDisc > 0) return (
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 mb-2 text-xs">
+                    <span className="text-gray-600">Class Fee: Rs. {classDue.toLocaleString()} </span>
+                    <span className="text-red-500 font-bold"> − Rs. {autoDisc.toLocaleString()} discount </span>
+                    <span className="text-emerald-700 font-bold">= Rs. {stuFee.toLocaleString()} ✅</span>
+                  </div>
+                );
+                if (stuFee === classDue) return <p className="text-xs text-gray-400 mt-1 mb-2">No discount — pays full class fee.</p>;
+                return <p className="text-xs text-blue-500 mt-1 mb-2">Enter amount &lt; Rs. {classDue.toLocaleString()} to auto-add discount.</p>;
+              })()}
+            </div>
+            <Inp label="Annual Fund (Rs.)" type="number" min="0" value={form.annualFund||''} onChange={e => setForm({...form, annualFund: e.target.value})} placeholder="e.g. 500 — leave blank if none"/>
+          </div>
+          {/* ── Row 4: Opening Balance ── */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-0">
+            <Inp label="Opening Balance (Rs.) — Previous Dues" type="number" min="0" value={form.openingBalance||''} onChange={e => setForm({...form, openingBalance: e.target.value})} placeholder="0 if no prior balance"/>
+            <div/>
+          </div>
+          {Number(form.openingBalance) > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2 mb-2 text-xs text-amber-700">
+              ⚠️ Opening balance of <strong>Rs. {Number(form.openingBalance).toLocaleString()}</strong> will show as prior due in fee collection.
+            </div>
+          )}
+          {/* ── Divider: Family / Sibling Info ── */}
+          <div className="border-t border-gray-100 pt-3 mt-1 mb-1">
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">👨‍👧‍👦 Family & Sibling Info</p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-5 gap-y-0">
+              <div className="sm:col-span-2">
+                <Inp label="Family Name (for siblings)" value={form.family||''} onChange={e => setForm({...form, family: e.target.value})} placeholder="e.g. Khan Family — same for all siblings"/>
+              </div>
+              <Inp label="Family ID / Serial No." value={form.familyId||''} onChange={e => setForm({...form, familyId: e.target.value})} placeholder="e.g. F-001"/>
+            </div>
+            <Inp label="Sibling Discount (Rs./month)" type="number" min="0" value={form.siblingDiscount||''} onChange={e => setForm({...form, siblingDiscount: e.target.value})} placeholder="Monthly discount for being a sibling — 0 if none"/>
+          </div>
+          {/* ── Row: Contact / Address ── */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-0">
+            <Inp label="Contact Number" value={form.contact} onChange={e => setForm({...form, contact: e.target.value})} placeholder="e.g. 0321-1234567"/>
+            <Inp label="Address" value={form.address} onChange={e => setForm({...form, address: e.target.value})} placeholder="Home address"/>
+          </div>
+          {/* ── Photo ── */}
           <Field label="Student Photo (Optional — used for ID card)">
             <div className="flex items-center gap-3 mb-2">
               {form.photo
@@ -1003,7 +1306,7 @@ function Students() {
 }
 
 // ── INVENTORY ────────────────────────────────────────────────────────────────
-const blankItem = { name:'', type:'Book', qty:0, price:0, threshold:5 };
+const blankItem = { name:'', type:'Book', qty:0, price:0, threshold:5, vendorId:'' };
 
 function Inventory() {
   const { role } = React.useContext(UserContext);
@@ -1019,9 +1322,11 @@ function Inventory() {
   const [histMod, setHistMod]   = useState(null); // item
   const [delId, setDelId]       = useState(null);
   const students = S.get(K.STU, []);
+  const [vendors] = useState(() => S.get(K.VENDOR, []));
 
-  const [sQty, setSQty]   = useState('');
-  const [sNote, setSNote] = useState('');
+  const [sQty, setSQty]       = useState('');
+  const [sNote, setSNote]     = useState('');
+  const [sVendorId, setSVendorId] = useState(''); // vendor for stock-in
   const [iForm, setIForm] = useState({ stuId:'', qty:1, note:'' });
 
   const persistItems = (data) => { S.set(K.INV, data); setItems(data); };
@@ -1031,9 +1336,17 @@ function Inventory() {
     if (!form.name.trim()) return alert('Item name is required.');
     const qty = Math.max(0, Number(form.qty) || 0); // ← never negative
     if (Number(form.qty) < 0) return alert('⚠️ Stock quantity cannot be negative. Minimum is 0.');
-    const item = { ...form, qty, price: Math.max(0, Number(form.price)), threshold: Math.max(0, Number(form.threshold)) };
-    const updated = form.id ? items.map(i => i.id === form.id ? item : i) : [...items, { ...item, id: uid() }];
+    const itemId = form.id || uid();
+    const item = { ...form, id: itemId, qty, price: Math.max(0, Number(form.price)), threshold: Math.max(0, Number(form.threshold)) };
+    const updated = form.id ? items.map(i => i.id === form.id ? item : i) : [...items, item];
     persistItems(updated);
+    // If new item with initial qty AND a vendor selected → add to vendor ledger
+    if (!form.id && qty > 0 && form.vendorId) {
+      const price = Math.max(0, Number(form.price));
+      const sbook = S.get(K.SBOOK, []);
+      const delivery = { id: uid(), vendorId: form.vendorId, name: form.name.trim(), cls: 'INV', qty, price, year: NOW.getFullYear(), note: 'Initial stock entry', invItem: true, date: new Date().toISOString() };
+      S.set(K.SBOOK, [...sbook, delivery]);
+    }
     setForm(null);
   };
 
@@ -1047,10 +1360,17 @@ function Inventory() {
     const newQty = stockMod.mode === 'in' ? Number(stockMod.item.qty) + qty : Number(stockMod.item.qty) - qty;
     if (newQty < 0) return alert('⚠️ Stock cannot go negative.');
     const updatedItems = items.map(i => i.id === stockMod.item.id ? { ...i, qty: newQty } : i);
-    const newTx = { id: uid(), itemId: stockMod.item.id, type: stockMod.mode, qty, date: new Date().toISOString(), note: sNote };
+    const newTx = { id: uid(), itemId: stockMod.item.id, type: stockMod.mode, qty, date: new Date().toISOString(), note: sNote, vendorId: stockMod.mode === 'in' ? (sVendorId || '') : '' };
     persistItems(updatedItems);
     persistTxs([...txs, newTx]);
-    setStockMod(null); setSQty(''); setSNote('');
+    // If stock-in from a vendor, add to vendor ledger (SBOOK/inventory deliveries)
+    if (stockMod.mode === 'in' && sVendorId) {
+      const price = Number(stockMod.item.price) || 0;
+      const sbook = S.get(K.SBOOK, []);
+      const delivery = { id: uid(), vendorId: sVendorId, name: stockMod.item.name, cls: 'INV', qty, price, year: NOW.getFullYear(), note: sNote || 'Inventory delivery', invItem: true, date: new Date().toISOString() };
+      S.set(K.SBOOK, [...sbook, delivery]);
+    }
+    setStockMod(null); setSQty(''); setSNote(''); setSVendorId('');
   };
 
   const doIssue = () => {
@@ -1155,6 +1475,23 @@ function Inventory() {
           <Inp label="Quantity" type="number" min="0" value={form.qty} onChange={e => setForm({...form, qty: e.target.value})}/>
           <Inp label="Price per Unit (Rs.)" type="number" min="0" value={form.price} onChange={e => setForm({...form, price: e.target.value})}/>
           <Inp label="Low Stock Alert Threshold" type="number" min="1" value={form.threshold} onChange={e => setForm({...form, threshold: e.target.value})}/>
+          {vendors.length > 0 && (
+            <div className="mb-3">
+              <label className="block text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wide">Vendor / Supplier (optional)</label>
+              <select value={form.vendorId||''} onChange={e => setForm({...form, vendorId: e.target.value})} className={inputCls}>
+                <option value="">— No vendor —</option>
+                {vendors.map(v => <option key={v.id} value={v.id}>{v.name}{v.contact ? ' · '+v.contact : ''}</option>)}
+              </select>
+              {!form.id && form.vendorId && Number(form.qty) > 0 && (
+                <p className="text-xs text-blue-600 mt-1">📦 Initial stock (qty × price = Rs. {(Number(form.qty)*Number(form.price||0)).toLocaleString()}) will be added to vendor's ledger.</p>
+              )}
+            </div>
+          )}
+          {vendors.length === 0 && !form.id && (
+            <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 mb-3 text-xs text-blue-700">
+              💡 Add vendors in <strong>Vendors &amp; Books</strong> tab to link inventory to supplier accounts.
+            </div>
+          )}
           <div className="flex gap-2 mt-5">
             <Btn full onClick={saveItem}>{form.id ? 'Update Item' : 'Save Item'}</Btn>
             <Btn variant="outline" onClick={() => setForm(null)}>Cancel</Btn>
@@ -1191,6 +1528,21 @@ function Inventory() {
                 {Math.max(0, Number(stockMod.item.qty) - Number(sQty))} units
               </strong>
             </p>
+          )}
+          {stockMod.mode === 'in' && vendors.length > 0 && (
+            <div className="mb-3">
+              <label className="block text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wide">Vendor (optional)</label>
+              <select value={sVendorId} onChange={e => setSVendorId(e.target.value)} className={inputCls}>
+                <option value="">— No vendor / walk-in —</option>
+                {vendors.map(v => <option key={v.id} value={v.id}>{v.name}{v.contact ? ' · '+v.contact : ''}</option>)}
+              </select>
+              {sVendorId && <p className="text-xs text-blue-600 mt-1">📦 This delivery will be added to vendor's ledger automatically.</p>}
+            </div>
+          )}
+          {stockMod.mode === 'in' && vendors.length === 0 && (
+            <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 mb-3 text-xs text-blue-700">
+              💡 Go to <strong>Vendors &amp; Books</strong> tab to add vendors — then stock deliveries will be linked to their ledger.
+            </div>
           )}
           <Inp label="Note (optional)" value={sNote} onChange={e => setSNote(e.target.value)} placeholder="Reason or reference number"/>
           <div className="flex gap-2 mt-5">
@@ -1751,8 +2103,15 @@ function FeeCollection() {
     const due  = Number(classFees[stu.cls] || 0);
     const info = paidMap[stu.id];
     const paid = info ? info.total : 0;
-    if (paid <= 0)              return 'unpaid';
-    if (due > 0 && paid < due) return 'partial';
+    if (paid <= 0) return 'unpaid';
+    // Net due = class fee − discounts + opening balance carry-forward
+    // monthlyFee = student's personal rate; discount = classFee - monthlyFee
+    const stuRate      = Number(stu.monthlyFee || 0) || Number(stu.annualFund || 0);
+    const autoDisc     = stuRate > 0 && stuRate < due ? due - stuRate : 0;
+    const totalDisc    = info ? info.totalDisc : autoDisc;
+    const openingBal   = Number(stu.openingBalance || 0);
+    const netDue       = Math.max(0, due - totalDisc) + openingBal;
+    if (netDue > 0 && paid < netDue) return 'partial';
     return 'paid';
   };
 
@@ -1763,30 +2122,46 @@ function FeeCollection() {
              (fcls === 'All' || s.cls === fcls);
     }), [students, search, fcls]);
 
-  const netPayable = () => Math.max(0, Number(cf.feeAmount||0) - Number(cf.discount||0));
+  // Discount applies to CLASS FEE → student net fee = classFee - discount
+  // Opening balance = prior dues, added on top of monthly net fee
+  // Total real due = studentNetFee + openingBalance
+  // Balance = totalRealDue - amountAlreadyPaid
+  const classDueForModal  = () => Number(classFees[collMod?.stu?.cls] || 0);
+  const openingBalModal   = () => Number(collMod?.stu?.openingBalance || 0);
+  const studentNetFee     = () => Math.max(0, classDueForModal() - Number(cf.discount||0));
+  const totalRealDue      = () => studentNetFee() + openingBalModal();
+  const alreadyPaidModal  = () => Number(collMod?.alreadyPaid || 0);
+  const realTimeBalance   = () => Math.max(0, totalRealDue() - alreadyPaidModal());
+  const netPayable        = () => Number(cf.feeAmount || 0); // actual money being collected now
 
   const openCollect = (stu) => {
     const due         = Number(classFees[stu.cls] || 0);
+    const openingBal  = Number(stu.openingBalance || 0);
     const alreadyPaid = paidMap[stu.id]?.total || 0;
-    const balance     = Math.max(0, due - alreadyPaid);
-    setCollMod({ stu, alreadyPaid, balance });
-    // Auto-calculate discount: if student has a personal rate (annualFund) less than class fee
-    const stuRate    = Number(stu.annualFund || 0);
-    const autoDisc   = stuRate > 0 && stuRate < due ? due - stuRate : 0;
-    const autoAmount = autoDisc > 0 ? stuRate : (balance || due);
-    setCf({ month: vm, year: vy, feeAmount: String(autoAmount), discount: autoDisc > 0 ? String(autoDisc) : '', annualFund: '0', note: '', paymentMethod: 'Cash' });
+    // Auto discount: monthlyFee = student's personal rate; discount = classFee - monthlyFee
+    const stuRate     = Number(stu.monthlyFee || 0) || Number(stu.annualFund || 0);
+    const autoDisc    = stuRate > 0 && stuRate < due ? due - stuRate : 0;
+    const netMonthly  = Math.max(0, due - autoDisc); // student's monthly net fee
+    const totalDue    = netMonthly + openingBal;      // total owed including prior balance
+    const balance     = Math.max(0, totalDue - alreadyPaid);
+    setCollMod({ stu, alreadyPaid, balance, openingBal, totalDue });
+    // Auto-fill amount = remaining balance (includes opening balance)
+    const autoAmount  = autoDisc > 0 ? String(netMonthly) : String(balance || due);
+    setCf({ month: vm, year: vy, feeAmount: autoAmount, discount: autoDisc > 0 ? String(autoDisc) : '', annualFund: '0', note: '', paymentMethod: 'Cash' });
   };
 
   const collectFee = () => {
     const fee  = Number(cf.feeAmount || 0);
     const disc = Number(cf.discount || 0);
+    const due  = Number(classFees[collMod.stu.cls] || 0);
     if (fee <= 0) return alert('Enter a valid amount received.');
-    if (disc > fee) return alert('Discount cannot exceed the fee amount.');
-    const net = Math.max(0, fee - disc);
+    if (disc > due) return alert('Discount cannot exceed the class fee.');
     const pay = {
       id: uid(), stuId: collMod.stu.id,
       month: Number(cf.month), year: Number(cf.year),
-      amount: net, discount: disc,
+      amount: fee,      // actual money received from student
+      discount: disc,   // discount deducted from class fee
+      classFee: due,    // class fee at time of payment (for receipt)
       annualFund: Number(cf.annualFund||0),
       note: cf.note, paymentMethod: cf.paymentMethod || 'Cash',
       date: new Date().toISOString(),
@@ -1799,10 +2174,13 @@ function FeeCollection() {
   };
 
   const printReceipt = (pay, stu) => {
-    const origFee = Number(pay.amount) + Number(pay.discount||0);
-    const disc = Number(pay.discount||0);
-    const net  = Number(pay.amount);
-    const af   = Number(pay.annualFund||0);
+    const disc     = Number(pay.discount||0);
+    const received = Number(pay.amount);  // actual money received
+    const af       = Number(pay.annualFund||0);
+    // classFee stored in new records; fallback for old records = amount + discount
+    const origFee  = Number(pay.classFee||0) || (received + disc);
+    const net      = Math.max(0, origFee - disc); // student net fee
+    const balAmt   = net - received; // positive = still owes, negative = advance
     const win = window.open('', '_blank', 'width=420,height=680');
     win.document.write(`<!DOCTYPE html><html><head><title>Fee Receipt</title>
       <style>
@@ -1840,14 +2218,17 @@ function FeeCollection() {
         ${stu.family ? `<div><div class="label">Family</div><div class="value">${stu.family}</div></div>` : ''}
       </div>
       <hr class="divider"/>
-      <div class="fee-row"><span>Amount Received</span><span>Rs. ${origFee.toLocaleString()}</span></div>
+      <div class="fee-row"><span>Class Fee</span><span>Rs. ${origFee.toLocaleString()}</span></div>
       ${disc > 0 ? `<div class="disc-row"><span>Discount</span><span>- Rs. ${disc.toLocaleString()}</span></div>` : ''}
-      ${disc > 0 ? `<div class="net-row"><span>Net Fee</span><span>Rs. ${net.toLocaleString()}</span></div>` : ''}
+      ${disc > 0 ? `<div class="net-row"><span>Student Net Fee</span><span>Rs. ${net.toLocaleString()}</span></div>` : ''}
+      <div class="fee-row"><span>Amount Received</span><span>Rs. ${received.toLocaleString()}</span></div>
       ${af > 0 ? `<div class="fee-row"><span>Annual Fund</span><span>Rs. ${af.toLocaleString()}</span></div>` : ''}
       ${disc > 0 ? `<div class="disc-badge">✓ Discount Applied: Rs. ${disc.toLocaleString()}</div>` : ''}
+      ${balAmt > 0 ? `<div class="disc-row" style="color:#dc2626"><span>Balance Remaining</span><span>Rs. ${balAmt.toLocaleString()}</span></div>` : ''}
+      ${balAmt < 0 ? `<div class="net-row" style="color:#059669"><span>Advance Paid</span><span>Rs. ${Math.abs(balAmt).toLocaleString()}</span></div>` : ''}
       <div class="total">
-        <span class="total-label">Total Paid</span>
-        <span class="total-val">Rs. ${(net + af).toLocaleString()}</span>
+        <span class="total-label">Total Collected</span>
+        <span class="total-val">Rs. ${(received + af).toLocaleString()}</span>
       </div>
       ${pay.note ? `<p style="font-size:11px;color:#6b7280;margin-top:4px">Note: ${pay.note}</p>` : ''}
       <hr class="divider"/>
@@ -2073,26 +2454,29 @@ function FeeCollection() {
                     <thead className="bg-gray-50 border-b">
                       <tr className="text-left text-xs text-gray-500 font-semibold uppercase">
                         <th className="px-4 py-3">Student</th>
-                        <th className="px-4 py-3 hidden sm:table-cell">Father</th>
+                        <th className="px-4 py-3 hidden lg:table-cell">Father</th>
                         <th className="px-4 py-3">Class</th>
-                        <th className="px-4 py-3 hidden sm:table-cell">Fee</th>
-                        <th className="px-4 py-3 hidden sm:table-cell text-red-500">Discount</th>
-                        <th className="px-4 py-3 hidden sm:table-cell">Net Due</th>
-                        <th className="px-4 py-3">Status</th>
-                        <th className="px-4 py-3 hidden sm:table-cell">Balance</th>
+                        <th className="px-4 py-3 hidden md:table-cell">Monthly Fee</th>
+                        <th className="px-4 py-3 hidden md:table-cell text-red-500">Discount</th>
+                        <th className="px-4 py-3 hidden md:table-cell">Net Due</th>
+                        <th className="px-4 py-3 hidden sm:table-cell">Status</th>
+                        <th className="px-4 py-3 text-red-600 font-bold">⚖️ Balance</th>
                         <th className="px-4 py-3 text-right">Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
                       {filtered.map(stu => {
-                        const due     = Number(classFees[stu.cls] || 0);
-                        const stuRate = Number(stu.annualFund || 0);
-                        const autoDisc = stuRate > 0 && stuRate < due ? due - stuRate : 0;
-                        const info    = paidMap[stu.id];
-                        const paid    = info ? info.total : 0;
-                        const disc    = info ? info.totalDisc : (autoDisc || 0);
-                        const netDue  = Math.max(0, due - disc);
-                        const status  = getStatus(stu);
+                        const due        = Number(classFees[stu.cls] || 0);
+                        // monthlyFee = student's personal rate → auto discount = classFee - monthlyFee
+                        const stuRate    = Number(stu.monthlyFee || 0) || Number(stu.annualFund || 0);
+                        const autoDisc   = stuRate > 0 && stuRate < due ? due - stuRate : 0;
+                        const info       = paidMap[stu.id];
+                        const paid       = info ? info.total : 0;
+                        // disc: use recorded discount from payments; if no payment yet, use auto-disc from profile
+                        const disc       = info ? Math.max(info.totalDisc, autoDisc) : autoDisc;
+                        const openingBal = Number(stu.openingBalance || 0);
+                        const netDue     = Math.max(0, due - disc) + openingBal;
+                        const status     = getStatus(stu);
                         const lastPay = info ? [...info.pays].sort((a,b)=>new Date(b.date)-new Date(a.date))[0] : null;
                         return (
                           <tr key={stu.id} className="hover:bg-slate-50">
@@ -2105,44 +2489,56 @@ function FeeCollection() {
                                 <div>
                                   <div className="font-semibold text-gray-800">{stu.name}</div>
                                   <div className="text-xs text-gray-400">Roll: {stu.roll}</div>
+                                  {openingBal > 0 && <div className="text-xs text-amber-600 font-semibold">📂 Prev: Rs. {openingBal.toLocaleString()}</div>}
                                 </div>
                               </div>
                             </td>
-                            <td className="px-4 py-3 text-gray-500 hidden sm:table-cell">{stu.father||'—'}</td>
+                            <td className="px-4 py-3 text-gray-500 hidden lg:table-cell">{stu.father||'—'}</td>
                             <td className="px-4 py-3"><Badge color="blue">{stu.cls}</Badge></td>
-                            <td className="px-4 py-3 text-gray-600 hidden sm:table-cell">
+                            <td className="px-4 py-3 text-gray-600 hidden md:table-cell">
                               {due > 0 ? `Rs. ${due.toLocaleString()}` : <Badge color="gray">Not Set</Badge>}
                             </td>
-                            <td className="px-4 py-3 hidden sm:table-cell">
+                            <td className="px-4 py-3 hidden md:table-cell">
                               {disc > 0
-                                ? <span className="text-red-500 font-semibold text-xs bg-red-50 px-2 py-0.5 rounded-lg">- Rs. {disc.toLocaleString()}</span>
+                                ? <span className="text-red-500 font-semibold text-xs bg-red-50 px-2 py-0.5 rounded-lg">− Rs. {disc.toLocaleString()}</span>
                                 : <span className="text-gray-300 text-xs">—</span>}
                             </td>
-                            <td className="px-4 py-3 hidden sm:table-cell">
-                              {due > 0
-                                ? <span className={`font-semibold ${disc > 0 ? 'text-emerald-700' : 'text-gray-700'}`}>Rs. {netDue.toLocaleString()}</span>
+                            <td className="px-4 py-3 hidden md:table-cell">
+                              {due > 0 || openingBal > 0
+                                ? <div>
+                                    <span className={`font-semibold ${disc > 0 ? 'text-emerald-700' : 'text-gray-700'}`}>Rs. {netDue.toLocaleString()}</span>
+                                    {openingBal > 0 && <div className="text-xs text-amber-500">+prev Rs. {openingBal.toLocaleString()}</div>}
+                                  </div>
                                 : <span className="text-gray-300">—</span>}
                             </td>
-                            <td className="px-4 py-3">
-                              {status === 'paid' && <Badge color="green">✓ Paid Rs. {paid.toLocaleString()}</Badge>}
-                              {status === 'partial' && <Badge color="orange">⏳ Partial Rs. {paid.toLocaleString()}</Badge>}
+                            <td className="px-4 py-3 hidden sm:table-cell">
+                              {status === 'paid' && <Badge color="green">✓ Paid</Badge>}
+                              {status === 'partial' && <Badge color="orange">⏳ Partial</Badge>}
                               {status === 'unpaid' && <Badge color="red">✗ Unpaid</Badge>}
                             </td>
-                            <td className="px-4 py-3 hidden sm:table-cell">
+                            <td className="px-4 py-3">
                               {(() => {
-                                const bal = paid - netDue;
-                                if (!due) return <span className="text-gray-300 text-xs">—</span>;
+                                const bal = paid - netDue; // negative = still owes, positive = advance
+                                if (!due && !openingBal) return <span className="text-gray-300 text-xs">—</span>;
+                                if (bal >= 0 && netDue === 0) return (
+                                  <span className="text-emerald-600 font-bold text-sm">✅ Clear</span>
+                                );
                                 if (bal > 0) return (
                                   <div className="flex flex-col">
-                                    <span className="text-emerald-600 font-bold text-sm">+Rs. {bal.toLocaleString()}</span>
-                                    <span className="text-xs text-emerald-500">Advance</span>
+                                    <span className="text-emerald-600 font-extrabold text-sm">+Rs. {bal.toLocaleString()}</span>
+                                    <span className="text-xs text-emerald-500 font-semibold">Advance</span>
                                   </div>
                                 );
-                                if (bal === 0) return <span className="text-gray-400 font-semibold text-sm">Rs. 0</span>;
+                                if (bal === 0) return (
+                                  <div className="flex flex-col">
+                                    <span className="text-emerald-600 font-bold text-sm">✅ Rs. 0</span>
+                                    <span className="text-xs text-emerald-400">Settled</span>
+                                  </div>
+                                );
                                 return (
                                   <div className="flex flex-col">
-                                    <span className="text-red-600 font-bold text-sm">-Rs. {Math.abs(bal).toLocaleString()}</span>
-                                    <span className="text-xs text-red-400">Remaining</span>
+                                    <span className="text-red-600 font-extrabold text-base">Rs. {Math.abs(bal).toLocaleString()}</span>
+                                    <span className="text-xs text-red-400 font-semibold">⬆ Due</span>
                                   </div>
                                 );
                               })()}
@@ -2507,12 +2903,26 @@ function FeeCollection() {
           <div className="bg-blue-50 rounded-xl p-3 mb-4">
             <p className="font-bold text-blue-800">{collMod.stu.name}</p>
             <p className="text-sm text-blue-600">Class {collMod.stu.cls} | Roll: {collMod.stu.roll}{collMod.stu.family ? ` | ${collMod.stu.family}` : ''}</p>
-            {collMod.alreadyPaid > 0 && (
-              <div className="flex gap-4 mt-2 text-sm">
-                <span className="text-gray-600">Already Paid: <strong className="text-emerald-700">Rs. {collMod.alreadyPaid.toLocaleString()}</strong></span>
-                <span className="text-gray-600">Balance Due: <strong className="text-red-600">Rs. {collMod.balance.toLocaleString()}</strong></span>
+            {Number(collMod.stu.openingBalance||0) > 0 && (
+              <div className="mt-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5 text-sm text-amber-700">
+                📂 Opening Balance (prev dues): <strong>Rs. {Number(collMod.stu.openingBalance).toLocaleString()}</strong>
               </div>
             )}
+            <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+              <div className="bg-white rounded-lg px-3 py-1.5">
+                <span className="text-gray-400 text-xs block">Total Due</span>
+                <strong className="text-blue-700">Rs. {(collMod.totalDue||collMod.balance).toLocaleString()}</strong>
+                {collMod.openingBal > 0 && <span className="text-xs text-amber-500 block">incl. prev Rs. {collMod.openingBal.toLocaleString()}</span>}
+              </div>
+              <div className="bg-white rounded-lg px-3 py-1.5">
+                <span className="text-gray-400 text-xs block">{collMod.alreadyPaid > 0 ? 'Paid This Month' : 'Paid'}</span>
+                <strong className="text-emerald-700">Rs. {collMod.alreadyPaid.toLocaleString()}</strong>
+              </div>
+              <div className="bg-white rounded-lg px-3 py-1.5 col-span-2">
+                <span className="text-gray-400 text-xs block">Balance Remaining</span>
+                <strong className={collMod.balance > 0 ? 'text-red-600' : 'text-emerald-700'}>Rs. {collMod.balance.toLocaleString()}</strong>
+              </div>
+            </div>
           </div>
           <div className="flex gap-2 mb-1">
             <div className="flex-1">
@@ -2528,13 +2938,31 @@ function FeeCollection() {
             onChange={e => setCf({...cf, feeAmount: e.target.value})} placeholder="Enter amount received now"/>
           <Inp label="Discount (Rs.)" type="number" min="0" value={cf.discount}
             onChange={e => setCf({...cf, discount: e.target.value})} placeholder="0 if no discount"/>
-          {Number(cf.discount) > 0 && (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-3 text-sm">
-              <div className="flex justify-between text-gray-600 mb-1"><span>Amount:</span><span className="font-semibold">Rs. {Number(cf.feeAmount||0).toLocaleString()}</span></div>
-              <div className="flex justify-between text-red-600 mb-1"><span>Discount:</span><span className="font-semibold">- Rs. {Number(cf.discount||0).toLocaleString()}</span></div>
-              <div className="flex justify-between font-bold text-emerald-700 border-t border-amber-200 pt-1"><span>Net Payable:</span><span>Rs. {netPayable().toLocaleString()}</span></div>
-            </div>
-          )}
+          {(Number(cf.discount) > 0 || openingBalModal() > 0) && (() => {
+            const due2      = classDueForModal();
+            const disc2     = Number(cf.discount || 0);
+            const netFee2   = studentNetFee();           // class fee − discount
+            const obBal     = openingBalModal();          // prior dues
+            const totalDue2 = netFee2 + obBal;           // total owed
+            const paid2     = alreadyPaidModal();         // already paid this month
+            const received2 = Number(cf.feeAmount || 0); // receiving now
+            const bal2      = totalDue2 - paid2 - received2; // balance after this payment
+            return (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-3 text-sm">
+                <div className="flex justify-between text-gray-600 mb-1"><span>Class Fee:</span><span className="font-semibold">Rs. {due2.toLocaleString()}</span></div>
+                {disc2 > 0 && <div className="flex justify-between text-red-600 mb-1"><span>Discount:</span><span className="font-semibold">− Rs. {disc2.toLocaleString()}</span></div>}
+                {disc2 > 0 && <div className="flex justify-between text-blue-700 font-semibold mb-1"><span>Monthly Net Fee:</span><span>Rs. {netFee2.toLocaleString()}</span></div>}
+                {obBal > 0 && <div className="flex justify-between text-amber-700 font-semibold mb-1"><span>Opening Balance (prev dues):</span><span>+ Rs. {obBal.toLocaleString()}</span></div>}
+                <div className="flex justify-between text-blue-800 font-bold border-t border-amber-300 pt-1 mb-1"><span>Total Net Due:</span><span>Rs. {totalDue2.toLocaleString()}</span></div>
+                {paid2 > 0 && <div className="flex justify-between text-emerald-700 mb-1"><span>Already Paid:</span><span className="font-semibold">− Rs. {paid2.toLocaleString()}</span></div>}
+                {received2 > 0 && <div className="flex justify-between text-gray-600 mb-1"><span>Receiving Now:</span><span className="font-semibold">− Rs. {received2.toLocaleString()}</span></div>}
+                {received2 > 0 && <div className={`flex justify-between font-bold border-t border-amber-300 pt-1 ${bal2 > 0 ? 'text-red-600' : bal2 < 0 ? 'text-emerald-700' : 'text-gray-500'}`}>
+                  <span>{bal2 > 0 ? '⚠️ Balance Remaining:' : bal2 < 0 ? '✅ Advance:' : '✅ Fully Cleared'}</span>
+                  <span>Rs. {Math.abs(bal2).toLocaleString()}</span>
+                </div>}
+              </div>
+            );
+          })()}
           <Inp label="Annual Fund (Rs.)" type="number" min="0" value={cf.annualFund}
             onChange={e => setCf({...cf, annualFund: e.target.value})} placeholder="0 if not applicable"/>
           <Inp label="Remarks / Note (optional)" value={cf.note}
@@ -2550,10 +2978,19 @@ function FeeCollection() {
               ))}
             </div>
           </div>
-          <div className="bg-emerald-50 rounded-xl p-3 mb-4 flex justify-between items-center">
-            <span className="font-bold text-emerald-800">Total to Collect Now:</span>
+          <div className="bg-emerald-50 rounded-xl p-3 mb-2 flex justify-between items-center">
+            <span className="font-bold text-emerald-800">Collecting Now:</span>
             <span className="text-xl font-extrabold text-emerald-700">Rs. {(netPayable() + Number(cf.annualFund||0)).toLocaleString()}</span>
           </div>
+          {(() => {
+            const remainAfter = totalRealDue() - alreadyPaidModal() - netPayable();
+            if (!collMod) return null;
+            return remainAfter > 0
+              ? <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-2 mb-3 flex justify-between text-sm"><span className="text-red-600 font-semibold">Balance after this payment:</span><span className="text-red-700 font-bold">Rs. {remainAfter.toLocaleString()} remaining</span></div>
+              : remainAfter < 0
+              ? <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2 mb-3 flex justify-between text-sm"><span className="text-emerald-600 font-semibold">After this payment:</span><span className="text-emerald-700 font-bold">Rs. {Math.abs(remainAfter).toLocaleString()} advance</span></div>
+              : <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2 mb-3 text-center text-sm text-emerald-700 font-bold">✅ Fully cleared after this payment</div>;
+          })()}
           <div className="flex gap-2">
             <Btn full variant="green" onClick={collectFee}>✅ Save & Print Receipt</Btn>
             <Btn variant="outline" onClick={() => setCollMod(null)}>Cancel</Btn>
@@ -4692,11 +5129,17 @@ function VendorBooks() {
         const vledgerId = selVL || (vendors[0]?.id || '');
         const vendor = vendors.find(v => v.id === vledgerId);
         if (vendors.length === 0) return <Empty icon="🏪" text="No vendors added yet. Add vendors first."/>;
-        // Build ledger entries
+        // Build ledger entries (books + inventory deliveries)
         const entries = [];
         books.filter(b => b.vendorId === vledgerId).forEach(b => {
           const amt = Number(b.qty||0) * Number(b.price||0);
-          if (amt > 0) entries.push({ date: String(b.year)+'-01-01', desc: `Stock In — ${b.name} (Class ${b.cls}, Session ${b.year})`, qty: Number(b.qty||0), rate: Number(b.price||0), dr: 0, cr: amt, type: 'in' });
+          if (b.invItem) {
+            // Inventory delivery (from Inventory module Stock In)
+            const entryDate = b.date || (String(b.year)+'-01-01');
+            if (amt > 0 || Number(b.qty||0) > 0) entries.push({ date: entryDate, desc: `📦 Inventory — ${b.name} (${b.note||'Stock In'})`, qty: Number(b.qty||0), rate: Number(b.price||0), dr: 0, cr: amt, type: 'inv' });
+          } else {
+            if (amt > 0) entries.push({ date: String(b.year)+'-01-01', desc: `📚 Books — ${b.name} (Class ${b.cls}, Session ${b.year})`, qty: Number(b.qty||0), rate: Number(b.price||0), dr: 0, cr: amt, type: 'in' });
+          }
         });
         vpays.filter(p => p.vendorId === vledgerId).forEach(p => {
           entries.push({ date: p.date, desc: `Payment — ${p.rcpt}${p.note?' | '+p.note:''}`, qty: 0, rate: 0, dr: Number(p.amount||0), cr: 0, type: 'pay' });
@@ -4718,7 +5161,7 @@ function VendorBooks() {
               <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
                 <p className="text-xs text-blue-500 font-semibold uppercase mb-1">📦 Total Supplied (Cr)</p>
                 <p className="text-xl font-extrabold text-blue-700">Rs. {totalCr.toLocaleString()}</p>
-                <p className="text-xs text-gray-400 mt-0.5">Books purchased from vendor</p>
+                <p className="text-xs text-gray-400 mt-0.5">Books &amp; inventory received from vendor</p>
               </div>
               <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
                 <p className="text-xs text-emerald-600 font-semibold uppercase mb-1">💳 Total Paid (Dr)</p>
