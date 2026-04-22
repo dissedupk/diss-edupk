@@ -4976,7 +4976,7 @@ function Exams() {
   // ── Paper Tab State ──
   const [paperSettings, setPaperSettings] = useState({ cls: CLASSES[0], subject:'English', term:'Term 1', year: NOW.getFullYear(), date:'', totalMarks:100, time:'2 Hours', instructions:'Attempt all questions.' });
   const [paperQs, setPaperQs] = useState([]);
-  const blankQ = () => ({ id: uid(), section:'', type:'english', text:'', marks:5, shapes:[], narrowCount:1, writtenCount:1, urduCount:1, mathRows:1, mathCols:1, shortCount:1, shapesLineCount:1, shapeSize:80, shapeNameLine:false, shapeAlign:'left', tableEnabled:false, tableColumns:[{header:''},{header:''}], tableRows:5, tableData:{}, tableDir:'ltr', tableRowHeight:'0.45in' });
+  const blankQ = () => ({ id: uid(), section:'', type:'english', text:'', marks:5, shapes:[], narrowCount:1, writtenCount:1, urduCount:1, mathRows:1, mathCols:1, shortCount:1, shapesLineCount:1, shapeSize:80, shapeNameLine:false, shapeAlign:'left', tableEnabled:false, tableColumns:[{header:''}], tableRows:1, tableData:{}, tableDir:'ltr', tableRowHeight:'0.45in' });
   const addQ   = () => setPaperQs(prev => [...prev, blankQ()]);
   const removeQ = (id) => setPaperQs(prev => prev.filter(q => q.id !== id));
   const updateQ = (id, field, val) => setPaperQs(prev => prev.map(q => q.id===id ? {...q, [field]: val} : q));
@@ -5618,23 +5618,6 @@ function Exams() {
                             <input type="number" min="0" max="10" value={q.shapesLineCount} onChange={e=>updateQ(q.id,'shapesLineCount',e.target.value)} placeholder="e.g. 3" className={inputCls}/>
                           </div>
                         )}
-                        {q.type==='table' && (
-                          <>
-                            <div>
-                              <label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Rows</label>
-                              <input type="number" min="1" max="30" value={q.tableRows||5} onChange={e=>updateQ(q.id,'tableRows',Number(e.target.value))} placeholder="e.g. 5" className={inputCls}/>
-                            </div>
-                            <div>
-                              <label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Row Height</label>
-                              <select value={q.tableRowHeight||'0.45in'} onChange={e=>updateQ(q.id,'tableRowHeight',e.target.value)} className={inputCls}>
-                                <option value="0.30in">Narrow</option>
-                                <option value="0.45in">Normal</option>
-                                <option value="0.60in">Wide</option>
-                                <option value="0.80in">Extra Wide</option>
-                              </select>
-                            </div>
-                          </>
-                        )}
                       </div>
                     </div>
 
@@ -5757,12 +5740,27 @@ function Exams() {
                         {/* Table toolbar */}
                         <div className="flex flex-wrap items-center gap-2 p-2 bg-gray-50 border-b border-gray-200">
                           <span className="text-xs font-bold text-gray-600">📊 Table Editor</span>
+                          {/* Column controls */}
                           <button onClick={()=>updateQ(q.id,'tableColumns',[...(q.tableColumns||[]),{header:''}])}
                             className="px-2 py-1 text-xs bg-blue-600 text-white rounded font-semibold hover:bg-blue-700">+ Col</button>
                           {(q.tableColumns||[]).length>1 && (
                             <button onClick={()=>updateQ(q.id,'tableColumns',(q.tableColumns||[]).slice(0,-1))}
                               className="px-2 py-1 text-xs bg-red-100 text-red-600 rounded font-semibold hover:bg-red-200">− Col</button>
                           )}
+                          {/* Row controls */}
+                          <button onClick={()=>updateQ(q.id,'tableRows',(q.tableRows||1)+1)}
+                            className="px-2 py-1 text-xs bg-emerald-600 text-white rounded font-semibold hover:bg-emerald-700">+ Row</button>
+                          {(q.tableRows||1)>1 && (
+                            <button onClick={()=>{
+                              const nr=(q.tableRows||1)-1;
+                              // remove last row data
+                              const nd={...(q.tableData||{})};
+                              (q.tableColumns||[]).forEach((_,ci)=>delete nd[`${nr}_${ci}`]);
+                              updateQ(q.id,'tableRows',nr);
+                              updateQ(q.id,'tableData',nd);
+                            }} className="px-2 py-1 text-xs bg-red-100 text-red-600 rounded font-semibold hover:bg-red-200">− Row</button>
+                          )}
+                          {/* Direction */}
                           <div className="flex items-center gap-1 ml-1">
                             <span className="text-xs text-gray-500">Dir:</span>
                             {['ltr','rtl'].map(d=>(
@@ -5772,6 +5770,14 @@ function Exams() {
                               </button>
                             ))}
                           </div>
+                          {/* Row height */}
+                          <select value={q.tableRowHeight||'0.45in'} onChange={e=>updateQ(q.id,'tableRowHeight',e.target.value)}
+                            className="text-xs border border-gray-200 rounded px-1 py-0.5 bg-white">
+                            <option value="0.30in">Narrow rows</option>
+                            <option value="0.45in">Normal rows</option>
+                            <option value="0.60in">Wide rows</option>
+                            <option value="0.80in">Extra wide</option>
+                          </select>
                         </div>
                         {/* Table grid */}
                         <div className="overflow-x-auto p-2">
