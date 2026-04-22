@@ -999,10 +999,14 @@ function openSiblingWindow() {
       }));
       const updated = [...existing, ...newStudents];
       localStorage.setItem('sms_stu', JSON.stringify(updated));
-      showMsg('✅ '+newStudents.length+' student(s) saved! (AF: Rs.'+afEach+' each, Disc: Rs.'+sdEach+' each) Refreshing...', 'success');
-      if (window.opener && !window.opener.closed) {
-        setTimeout(() => { window.opener.location.reload(); window.close(); }, 2000);
-      }
+      showMsg('✅ '+newStudents.length+' student(s) saved! Closing window...', 'success');
+      // Always close after 1.5s — reload parent if available
+      setTimeout(function() {
+        try { if (window.opener && !window.opener.closed) window.opener.location.reload(); } catch(e){}
+        window.close();
+        // Fallback: if window.close() is blocked, redirect to blank
+        setTimeout(function(){ document.body.innerHTML='<div style="text-align:center;padding:60px;font-family:sans-serif"><h2 style="color:#10b981">✅ Saved!</h2><p style="color:#6b7280;margin-top:10px">You can close this window now.</p><button onclick="window.close()" style="margin-top:20px;padding:12px 28px;background:#3b82f6;color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer">Close Window</button></div>'; }, 500);
+      }, 1500);
     }
     // Start with 1 row
     addRow();
