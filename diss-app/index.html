@@ -2075,6 +2075,7 @@ function FeeCollection() {
                         <th className="px-4 py-3 hidden sm:table-cell text-red-500">Discount</th>
                         <th className="px-4 py-3 hidden sm:table-cell">Net Due</th>
                         <th className="px-4 py-3">Status</th>
+                        <th className="px-4 py-3 hidden sm:table-cell">Balance</th>
                         <th className="px-4 py-3 text-right">Action</th>
                       </tr>
                     </thead>
@@ -2118,13 +2119,27 @@ function FeeCollection() {
                             </td>
                             <td className="px-4 py-3">
                               {status === 'paid' && <Badge color="green">✓ Paid Rs. {paid.toLocaleString()}</Badge>}
-                              {status === 'partial' && (
-                                <div className="flex flex-col gap-0.5">
-                                  <Badge color="orange">⏳ Partial Rs. {paid.toLocaleString()}</Badge>
-                                  <span className="text-xs text-red-500 font-semibold">Balance: Rs. {Math.max(0, netDue-paid).toLocaleString()}</span>
-                                </div>
-                              )}
+                              {status === 'partial' && <Badge color="orange">⏳ Partial Rs. {paid.toLocaleString()}</Badge>}
                               {status === 'unpaid' && <Badge color="red">✗ Unpaid</Badge>}
+                            </td>
+                            <td className="px-4 py-3 hidden sm:table-cell">
+                              {(() => {
+                                const bal = paid - netDue;
+                                if (!due) return <span className="text-gray-300 text-xs">—</span>;
+                                if (bal > 0) return (
+                                  <div className="flex flex-col">
+                                    <span className="text-emerald-600 font-bold text-sm">+Rs. {bal.toLocaleString()}</span>
+                                    <span className="text-xs text-emerald-500">Advance</span>
+                                  </div>
+                                );
+                                if (bal === 0) return <span className="text-gray-400 font-semibold text-sm">Rs. 0</span>;
+                                return (
+                                  <div className="flex flex-col">
+                                    <span className="text-red-600 font-bold text-sm">-Rs. {Math.abs(bal).toLocaleString()}</span>
+                                    <span className="text-xs text-red-400">Remaining</span>
+                                  </div>
+                                );
+                              })()}
                             </td>
                             <td className="px-4 py-3 text-right">
                               <div className="flex flex-wrap gap-1 justify-end">
