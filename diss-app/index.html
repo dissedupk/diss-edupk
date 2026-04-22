@@ -1770,7 +1770,11 @@ function FeeCollection() {
     const alreadyPaid = paidMap[stu.id]?.total || 0;
     const balance     = Math.max(0, due - alreadyPaid);
     setCollMod({ stu, alreadyPaid, balance });
-    setCf({ month: vm, year: vy, feeAmount: String(balance || due), discount: '', annualFund: '0', note: '', paymentMethod: 'Cash' });
+    // Auto-calculate discount: if student has a personal rate (annualFund) less than class fee
+    const stuRate    = Number(stu.annualFund || 0);
+    const autoDisc   = stuRate > 0 && stuRate < due ? due - stuRate : 0;
+    const autoAmount = autoDisc > 0 ? stuRate : (balance || due);
+    setCf({ month: vm, year: vy, feeAmount: String(autoAmount), discount: autoDisc > 0 ? String(autoDisc) : '', annualFund: '0', note: '', paymentMethod: 'Cash' });
   };
 
   const collectFee = () => {
@@ -2082,9 +2086,11 @@ function FeeCollection() {
                     <tbody className="divide-y divide-gray-50">
                       {filtered.map(stu => {
                         const due     = Number(classFees[stu.cls] || 0);
+                        const stuRate = Number(stu.annualFund || 0);
+                        const autoDisc = stuRate > 0 && stuRate < due ? due - stuRate : 0;
                         const info    = paidMap[stu.id];
                         const paid    = info ? info.total : 0;
-                        const disc    = info ? info.totalDisc : 0;
+                        const disc    = info ? info.totalDisc : (autoDisc || 0);
                         const netDue  = Math.max(0, due - disc);
                         const status  = getStatus(stu);
                         const lastPay = info ? [...info.pays].sort((a,b)=>new Date(b.date)-new Date(a.date))[0] : null;
