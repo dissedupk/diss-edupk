@@ -4,6 +4,12 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Discovery International School System</title>
+  <link rel="manifest" href="/manifest.json"/>
+  <meta name="theme-color" content="#c0392b"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-title" content="DISS"/>
+  <link rel="apple-touch-icon" href="diss-app/logo diss/for main sreeen when loading.png"/>
+  <script>if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js'));}</script>
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -38,10 +44,9 @@
 setTimeout(function(){var l=document.getElementById('fb-loading');if(l)l.remove();},3000);
 </script>
 <div id="fb-loading" style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#f1f5f9;z-index:9999;font-family:'Segoe UI',Arial,sans-serif">
-  <div style="text-align:center">
-    <div style="font-size:2.5rem;margin-bottom:1rem">🏫</div>
-    <div style="font-size:1.1rem;color:#475569;font-weight:600">Discovery International School System</div>
-    <div style="font-size:0.85rem;color:#94a3b8;margin-top:0.75rem">Syncing data from cloud...</div>
+  <div style="text-align:center;padding:20px">
+    <img src="diss-app/logo diss/for main sreeen when loading.png" alt="DISS" style="max-width:320px;width:90vw;object-fit:contain;margin-bottom:20px" onerror="this.style.display='none'"/>
+    <div style="font-size:0.85rem;color:#94a3b8;margin-top:0.5rem">Syncing data from cloud...</div>
     <div style="margin-top:1rem;width:40px;height:40px;border:3px solid #e2e8f0;border-top-color:#3b82f6;border-radius:50%;animation:spin 0.8s linear infinite;display:inline-block"></div>
     <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
   </div>
@@ -131,7 +136,8 @@ const S = {
     } catch(e) {}
   }
 };
-const K = { STU:'sms_stu', INV:'sms_inv', TX:'sms_tx', CF:'sms_cf', PAY:'sms_pay', EXP:'sms_exp', AF:'sms_af', STAFF:'sms_staff', SPAY:'sms_spay', BL:'sms_bl', DS:'sms_ds', RS:'sms_rs', VENDOR:'sms_vend', SBOOK:'sms_sbook', USERS:'sms_users', SESS:'sms_sess', VPAY:'sms_vpay', ACCT:'sms_acct', CBOOK:'sms_cbook', PERM:'sms_perm', AUDIT:'sms_audit' };
+const K = { STU:'sms_stu', INV:'sms_inv', TX:'sms_tx', CF:'sms_cf', PAY:'sms_pay', EXP:'sms_exp', AF:'sms_af', STAFF:'sms_staff', SPAY:'sms_spay', BL:'sms_bl', DS:'sms_ds', RS:'sms_rs', VENDOR:'sms_vend', SBOOK:'sms_sbook', USERS:'sms_users', SESS:'sms_sess', VPAY:'sms_vpay', ACCT:'sms_acct', CBOOK:'sms_cbook', PERM:'sms_perm', AUDIT:'sms_audit', PREQ:'sms_preq', NOTIF:'sms_notif', COMP:'sms_comp' };
+window.S = S; window.K = K;
 
 // ── Permission Context ─────────────────────────────────────────────────────────
 const PermContext = React.createContext({ staffCanModify: false });
@@ -216,9 +222,10 @@ function addCashBookEntry(type, description, amount, paymentMethod, date, note, 
 }
 
 // ── Logo & Footer ─────────────────────────────────────────────────────────────
-const LOGO_SRC = (() => { try { return new URL('school-app/school logo/diss png logo.png', window.location.href).href; } catch { return ''; } })();
+const LOGO_SRC = (() => { try { return new URL('diss-app/logo diss/for invoice printing diss logo.png', window.location.href).href; } catch { return ''; } })();
+const ADDR_SRC = (() => { try { return new URL('diss-app/logo diss/diss address for fotter.png', window.location.href).href; } catch { return ''; } })();
 
-const PRINT_FOOTER = `<div style="text-align:center;margin-top:18px;padding-top:10px;border-top:1px solid #e5e7eb;font-size:9px;color:#9ca3af;letter-spacing:.3px">DEVELOPED BY TATAHEER BUSINESS GROUP &nbsp;|&nbsp; ALL RIGHTS RESERVED 2026 &nbsp;|&nbsp; DEVELOPER CONTACT: +92(321)8555566</div>`;
+const PRINT_FOOTER = `<div style="margin-top:14px;padding-top:10px;border-top:1px solid #e5e7eb;text-align:center"><img src="${ADDR_SRC}" alt="DISS Address" style="max-width:520px;width:100%;object-fit:contain" onerror="this.style.display='none'"/><div style="font-size:9px;color:#9ca3af;letter-spacing:.3px;margin-top:6px">DEVELOPED BY TATAHEER BUSINESS GROUP &nbsp;|&nbsp; ALL RIGHTS RESERVED 2026 &nbsp;|&nbsp; DEVELOPER CONTACT: +92(321)8555566</div></div>`;
 
 // ── Print Utility ─────────────────────────────────────────────────────────────
 const SCHOOL_HEADER = `
@@ -345,10 +352,16 @@ function Empty({ icon, text }) {
 
 // ── LOGIN SCREEN ─────────────────────────────────────────────────────────────
 function LoginScreen({ onLogin }) {
-  const [uname, setUname] = useState('');
-  const [pass, setPass]   = useState('');
-  const [err, setErr]     = useState('');
+  const [tab, setTab]         = useState('staff');
+  const [uname, setUname]     = useState('');
+  const [pass, setPass]       = useState('');
+  const [err, setErr]         = useState('');
   const [showPass, setShowPass] = useState(false);
+  const [regMode, setRegMode] = useState(false);
+  const [reg, setReg]         = useState({ familyId:'', username:'', password:'', confirm:'', name:'' });
+  const [regMsg, setRegMsg]   = useState('');
+
+  const switchTab = (t) => { setTab(t); setErr(''); setRegMode(false); setRegMsg(''); setUname(''); setPass(''); };
 
   const login = () => {
     let users = S.get(K.USERS, []);
@@ -358,45 +371,554 @@ function LoginScreen({ onLogin }) {
     }
     const user = users.find(u => u.username === uname.trim() && u.password === pass);
     if (!user) { setErr('Invalid username or password.'); return; }
+    if (tab === 'staff' && user.role === 'parent') { setErr('Please use the Parent Login tab.'); return; }
+    if (tab === 'parent' && user.role !== 'parent') { setErr('Please use the Admin / Staff Login tab.'); return; }
+    if (user.status === 'pending') { setErr('Your account is pending admin approval. Please wait.'); return; }
+    if (user.status === 'rejected') { setErr('Your registration was rejected. Contact the school office.'); return; }
     S.set(K.SESS, user); onLogin(user);
+  };
+
+  const register = () => {
+    setRegMsg('');
+    if (!reg.familyId.trim()) { setRegMsg('Please enter your Family ID.'); return; }
+    if (!reg.name.trim())     { setRegMsg('Please enter your full name.'); return; }
+    if (!reg.username.trim()) { setRegMsg('Please choose a username.'); return; }
+    if (!reg.password.trim()) { setRegMsg('Please enter a password.'); return; }
+    if (reg.password !== reg.confirm) { setRegMsg('Passwords do not match.'); return; }
+    const students = S.get(K.STU, []);
+    const familyExists = students.some(s => s.familyId && s.familyId.trim() === reg.familyId.trim());
+    if (!familyExists) { setRegMsg('Family ID not found in school records. Please check with the school office.'); return; }
+    const users = S.get(K.USERS, []);
+    if (users.find(u => u.username === reg.username.trim())) { setRegMsg('Username already taken. Please choose another.'); return; }
+    const newUser = { id: uid(), username: reg.username.trim(), password: reg.password, name: reg.name.trim(), role: 'parent', familyId: reg.familyId.trim(), status: 'pending' };
+    S.set(K.USERS, [...users, newUser]);
+    const preqs = S.get(K.PREQ, []);
+    S.set(K.PREQ, [...preqs, { ...newUser, requestedAt: new Date().toISOString() }]);
+    setReg({ familyId:'', username:'', password:'', confirm:'', name:'' });
+    setRegMode(false);
+    alert('Registration submitted!\nYour account is pending admin approval.\nYou can login after the admin approves your request.');
   };
 
   return (
     <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-8">
-        <div className="text-center mb-6">
-          <img src={LOGO_SRC} alt="DISS" className="h-24 object-contain mx-auto mb-3"
-            onError={e => { e.target.style.display='none'; }}/>
-          <h2 className="text-lg font-bold text-gray-800">School Management System</h2>
-          <p className="text-xs text-gray-400 mt-1">Sign in to your account</p>
+        <div className="text-center mb-5">
+          <img src={LOGO_SRC} alt="DISS" className="h-20 object-contain mx-auto mb-3" onError={e => { e.target.style.display='none'; }}/>
+          <h2 className="text-base font-bold text-gray-800">School Management System</h2>
+          <p className="text-xs text-gray-400 mt-0.5">Discovery International School System</p>
         </div>
-        {err && <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-xl mb-4">{err}</div>}
-        <div className="mb-3">
-          <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Username</label>
-          <input value={uname} onChange={e => { setUname(e.target.value); setErr(''); }}
-            onKeyDown={e => e.key === 'Enter' && login()}
-            className={inputCls} placeholder="Enter username" autoFocus/>
+
+        {/* Tab Switcher */}
+        <div className="flex rounded-xl overflow-hidden border border-gray-200 mb-5">
+          <button onClick={() => switchTab('staff')}
+            className={`flex-1 py-2 text-xs font-bold transition-all ${tab==='staff' ? 'bg-red-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
+            🔐 Admin / Staff
+          </button>
+          <button onClick={() => switchTab('parent')}
+            className={`flex-1 py-2 text-xs font-bold transition-all ${tab==='parent' ? 'bg-red-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
+            👨‍👩‍👧 Parent
+          </button>
         </div>
-        <div className="mb-5">
-          <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Password</label>
-          <div className="relative">
-            <input type={showPass ? 'text' : 'password'} value={pass}
-              onChange={e => { setPass(e.target.value); setErr(''); }}
-              onKeyDown={e => e.key === 'Enter' && login()}
-              className={inputCls + ' pr-10'} placeholder="Enter password"/>
-            <button type="button" onClick={() => setShowPass(!showPass)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs">
-              {showPass ? 'Hide' : 'Show'}
+
+        {/* ── Staff / Admin / Teacher Login ── */}
+        {tab === 'staff' && (
+          <>
+            {err && <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-xl mb-4">{err}</div>}
+            <div className="mb-3">
+              <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Username</label>
+              <input value={uname} onChange={e => { setUname(e.target.value); setErr(''); }}
+                onKeyDown={e => e.key === 'Enter' && login()}
+                className={inputCls} placeholder="Enter username" autoFocus/>
+            </div>
+            <div className="mb-5">
+              <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Password</label>
+              <div className="relative">
+                <input type={showPass ? 'text' : 'password'} value={pass}
+                  onChange={e => { setPass(e.target.value); setErr(''); }}
+                  onKeyDown={e => e.key === 'Enter' && login()}
+                  className={inputCls + ' pr-10'} placeholder="Enter password"/>
+                <button type="button" onClick={() => setShowPass(!showPass)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs">
+                  {showPass ? 'Hide' : 'Show'}
+                </button>
+              </div>
+            </div>
+            <button onClick={login}
+              className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded-xl transition-all text-sm">
+              Sign In
             </button>
-          </div>
-        </div>
-        <button onClick={login}
-          className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded-xl transition-all text-sm">
-          Sign In
-        </button>
-        <p className="text-center text-xs text-gray-400 mt-4">Default login: <strong>admin</strong> / <strong>admin</strong></p>
-        <p className="text-center text-xs text-gray-300 mt-5 leading-tight">DEVELOPED BY TATAHEER BUSINESS GROUP<br/>ALL RIGHTS RESERVED 2026</p>
+            <p className="text-center text-xs text-gray-400 mt-4">Default: <strong>admin</strong> / <strong>admin</strong></p>
+          </>
+        )}
+
+        {/* ── Parent Login ── */}
+        {tab === 'parent' && !regMode && (
+          <>
+            {err && <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-xl mb-4">{err}</div>}
+            <div className="mb-3">
+              <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Username</label>
+              <input value={uname} onChange={e => { setUname(e.target.value); setErr(''); }}
+                onKeyDown={e => e.key === 'Enter' && login()}
+                className={inputCls} placeholder="Your username"/>
+            </div>
+            <div className="mb-5">
+              <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Password</label>
+              <div className="relative">
+                <input type={showPass ? 'text' : 'password'} value={pass}
+                  onChange={e => { setPass(e.target.value); setErr(''); }}
+                  onKeyDown={e => e.key === 'Enter' && login()}
+                  className={inputCls + ' pr-10'} placeholder="Your password"/>
+                <button type="button" onClick={() => setShowPass(!showPass)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs">
+                  {showPass ? 'Hide' : 'Show'}
+                </button>
+              </div>
+            </div>
+            <button onClick={login}
+              className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded-xl transition-all text-sm">
+              Sign In
+            </button>
+            <div className="text-center mt-4">
+              <p className="text-xs text-gray-400">New parent? <button onClick={() => { setRegMode(true); setErr(''); setRegMsg(''); }} className="text-red-600 font-semibold hover:underline">Create Account</button></p>
+            </div>
+          </>
+        )}
+
+        {/* ── Parent Registration ── */}
+        {tab === 'parent' && regMode && (
+          <>
+            <div className="bg-blue-50 border border-blue-200 text-blue-700 text-xs px-3 py-2 rounded-xl mb-4 leading-relaxed">
+              Enter your <strong>Family ID</strong> from your fee receipt. Your account will be approved by school admin before you can login.
+            </div>
+            {regMsg && <div className="bg-red-50 border border-red-200 text-red-700 text-xs px-3 py-2 rounded-xl mb-3">{regMsg}</div>}
+            <div className="mb-3">
+              <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Family ID *</label>
+              <input value={reg.familyId} onChange={e => setReg({...reg, familyId: e.target.value})}
+                className={inputCls} placeholder="e.g. FAM-001" autoFocus/>
+            </div>
+            <div className="mb-3">
+              <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Your Full Name *</label>
+              <input value={reg.name} onChange={e => setReg({...reg, name: e.target.value})}
+                className={inputCls} placeholder="Parent / Guardian name"/>
+            </div>
+            <div className="mb-3">
+              <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Choose Username *</label>
+              <input value={reg.username} onChange={e => setReg({...reg, username: e.target.value})}
+                className={inputCls} placeholder="Login username"/>
+            </div>
+            <div className="mb-3">
+              <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Password *</label>
+              <input type="password" value={reg.password} onChange={e => setReg({...reg, password: e.target.value})}
+                className={inputCls} placeholder="Create password"/>
+            </div>
+            <div className="mb-4">
+              <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Confirm Password *</label>
+              <input type="password" value={reg.confirm} onChange={e => setReg({...reg, confirm: e.target.value})}
+                className={inputCls} placeholder="Repeat password"/>
+            </div>
+            <button onClick={register}
+              className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded-xl transition-all text-sm mb-2">
+              Submit Registration
+            </button>
+            <button onClick={() => { setRegMode(false); setRegMsg(''); }}
+              className="w-full border border-gray-200 text-gray-600 font-semibold py-2 rounded-xl text-sm hover:bg-gray-50 transition-all">
+              ← Back to Login
+            </button>
+          </>
+        )}
+
+        <p className="text-center text-xs text-gray-300 mt-6 leading-tight">DEVELOPED BY TATAHEER BUSINESS GROUP<br/>ALL RIGHTS RESERVED 2026</p>
       </div>
+    </div>
+  );
+}
+
+// ── PARENT PORTAL ────────────────────────────────────────────────────────────
+function ParentPortal({ currentUser, onLogout }) {
+  const [tab, setTab] = useState('fee');
+  const familyId = currentUser.familyId || '';
+  const students  = S.get(K.STU, []).filter(s => s.familyId && s.familyId.trim() === familyId.trim());
+  const classFees = S.get(K.CF, {});
+  const payments  = S.get(K.PAY, []);
+  const notifs    = S.get(K.NOTIF, []);
+  const comps     = S.get(K.COMP, []);
+  const NOW2      = new Date();
+  const curM      = NOW2.getMonth(), curY = NOW2.getFullYear();
+
+  // ── Complaint form state ──
+  const [cForm, setCForm] = useState({ subject:'', message:'', type:'complaint' });
+  const [cSent, setCSent] = useState(false);
+
+  const submitComplaint = () => {
+    if (!cForm.subject.trim() || !cForm.message.trim()) { alert('Please fill in subject and message.'); return; }
+    const entry = { id: uid(), parentId: currentUser.id, parentName: currentUser.name, familyId, subject: cForm.subject.trim(), message: cForm.message.trim(), type: cForm.type, submittedAt: new Date().toISOString(), status: 'open' };
+    S.set(K.COMP, [...comps, entry]);
+    setCForm({ subject:'', message:'', type:'complaint' });
+    setCSent(true);
+    setTimeout(() => setCSent(false), 4000);
+  };
+
+  // ── Fee calculations per student ──
+  const feeData = students.map(s => {
+    const fee = Number(classFees[s.cls] || 0);
+    const allPays = payments.filter(p => p.stuId === s.id);
+    const curMonthPays = allPays.filter(p => p.month === curM && p.year === curY);
+    const paidThisMonth = curMonthPays.reduce((t, p) => t + Number(p.amount || 0), 0);
+    const lastPay = [...allPays].sort((a, b) => new Date(b.date) - new Date(a.date))[0];
+    const totalPaid = allPays.reduce((t, p) => t + Number(p.amount || 0), 0);
+    const afPaid    = allPays.reduce((t, p) => t + Number(p.annualFund || 0), 0);
+    const afDue     = Number(s.annualFund || 0);
+    const afBalance = Math.max(0, afDue - afPaid);
+    return { s, fee, paidThisMonth, lastPay, totalPaid, afBalance };
+  });
+
+  // ── Notifications for this family's classes ──
+  const myClasses = [...new Set(students.map(s => s.cls))];
+  const myNotifs  = notifs.filter(n => n.cls === 'All' || myClasses.includes(n.cls))
+                          .sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt));
+
+  const TABS = [
+    { id:'fee',        icon:'💰', label:'Fee Status' },
+    { id:'notif',      icon:'📢', label:'Notifications' },
+    { id:'complaint',  icon:'📝', label:'Complaints' },
+  ];
+
+  return (
+    <div className="min-h-screen bg-slate-100 flex flex-col">
+      {/* Header */}
+      <div className="h-1 bg-gradient-to-r from-red-500 via-amber-400 to-red-600"/>
+      <header className="bg-white border-b border-gray-200 shadow-sm px-4 py-3 flex items-center gap-3">
+        <img src={LOGO_SRC} alt="DISS" className="h-10 object-contain" onError={e => { e.target.style.display='none'; }}/>
+        <div className="flex-1 min-w-0">
+          <h1 className="text-sm font-bold text-gray-800 leading-tight">Parent Portal</h1>
+          <p className="text-xs text-gray-400 leading-tight truncate">Welcome, {currentUser.name}</p>
+        </div>
+        <button onClick={onLogout} className="text-xs text-gray-500 hover:text-red-600 px-3 py-1.5 rounded-lg hover:bg-red-50 border border-gray-200 transition-all">⏏ Logout</button>
+      </header>
+
+      {/* Family info banner */}
+      {students.length === 0 && (
+        <div className="m-4 bg-amber-50 border border-amber-200 text-amber-700 text-sm px-4 py-3 rounded-xl">
+          ⚠️ No students found for Family ID: <strong>{familyId}</strong>. Please contact the school office.
+        </div>
+      )}
+
+      {/* Tab Nav */}
+      <div className="bg-white border-b border-gray-200 px-4 flex gap-1 overflow-x-auto">
+        {TABS.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            className={`flex items-center gap-1.5 px-4 py-3 text-xs font-semibold whitespace-nowrap border-b-2 transition-all
+              ${tab===t.id ? 'border-red-600 text-red-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+            {t.icon} {t.label}
+          </button>
+        ))}
+      </div>
+
+      <main className="flex-1 p-4 sm:p-6 overflow-y-auto">
+
+        {/* ── FEE STATUS ── */}
+        {tab === 'fee' && (
+          <div className="space-y-4">
+            <h2 className="text-base font-bold text-gray-800">Fee Status — {MONTHS[curM]} {curY}</h2>
+            {feeData.length === 0 && <p className="text-gray-500 text-sm">No student records found.</p>}
+            {feeData.map(({ s, fee, paidThisMonth, lastPay, totalPaid, afBalance }) => {
+              const unpaid = Math.max(0, fee - paidThisMonth);
+              const isPaid = fee > 0 && paidThisMonth >= fee;
+              return (
+                <div key={s.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                  {/* Student header */}
+                  <div className="bg-gradient-to-r from-red-600 to-red-700 px-4 py-3 flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center text-white font-bold text-sm">{s.name[0]}</div>
+                    <div>
+                      <p className="text-white font-bold text-sm">{s.name}</p>
+                      <p className="text-red-100 text-xs">Class {s.cls} &nbsp;·&nbsp; Family ID: {s.familyId}</p>
+                    </div>
+                    <div className="ml-auto">
+                      <span className={`px-3 py-1 rounded-full text-xs font-bold ${isPaid ? 'bg-green-400 text-green-900' : fee===0 ? 'bg-gray-300 text-gray-700' : 'bg-red-300 text-red-900'}`}>
+                        {fee === 0 ? 'No Fee Set' : isPaid ? '✓ Paid' : '⚠ Unpaid'}
+                      </span>
+                    </div>
+                  </div>
+                  {/* Fee details */}
+                  <div className="p-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    <div className="bg-blue-50 rounded-xl p-3">
+                      <p className="text-xs text-blue-600 font-semibold uppercase tracking-wide">Monthly Fee</p>
+                      <p className="text-base font-bold text-blue-800 mt-0.5">Rs. {fee.toLocaleString()}</p>
+                    </div>
+                    <div className={`rounded-xl p-3 ${isPaid ? 'bg-green-50' : 'bg-red-50'}`}>
+                      <p className={`text-xs font-semibold uppercase tracking-wide ${isPaid ? 'text-green-600' : 'text-red-600'}`}>This Month</p>
+                      <p className={`text-base font-bold mt-0.5 ${isPaid ? 'text-green-800' : 'text-red-800'}`}>
+                        {isPaid ? `Rs. ${paidThisMonth.toLocaleString()}` : unpaid > 0 ? `Rs. ${unpaid.toLocaleString()} Due` : 'Not Set'}
+                      </p>
+                    </div>
+                    <div className="bg-purple-50 rounded-xl p-3">
+                      <p className="text-xs text-purple-600 font-semibold uppercase tracking-wide">Annual Fund Due</p>
+                      <p className={`text-base font-bold mt-0.5 ${afBalance > 0 ? 'text-red-700' : 'text-purple-800'}`}>
+                        {afBalance > 0 ? `Rs. ${afBalance.toLocaleString()}` : '✓ Clear'}
+                      </p>
+                    </div>
+                    <div className="bg-gray-50 rounded-xl p-3">
+                      <p className="text-xs text-gray-500 font-semibold uppercase tracking-wide">Last Payment</p>
+                      <p className="text-xs font-bold text-gray-800 mt-0.5">
+                        {lastPay ? `Rs. ${Number(lastPay.amount).toLocaleString()} on ${new Date(lastPay.date).toLocaleDateString('en-PK',{day:'2-digit',month:'short',year:'numeric'})}` : 'No payments yet'}
+                      </p>
+                    </div>
+                  </div>
+                  {/* Payment history */}
+                  {payments.filter(p => p.stuId === s.id).length > 0 && (
+                    <div className="border-t border-gray-100 px-4 pb-4 pt-3">
+                      <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Recent Payments</p>
+                      <div className="space-y-1.5">
+                        {[...payments.filter(p => p.stuId === s.id)]
+                          .sort((a,b) => new Date(b.date)-new Date(a.date))
+                          .slice(0,5)
+                          .map(p => (
+                          <div key={p.id} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
+                            <div>
+                              <span className="text-xs font-semibold text-gray-700">{MONTHS[p.month]} {p.year}</span>
+                              {p.rcpt && <span className="text-xs text-gray-400 ml-2">#{p.rcpt}</span>}
+                            </div>
+                            <span className="text-xs font-bold text-green-700">Rs. {Number(p.amount).toLocaleString()}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* ── NOTIFICATIONS ── */}
+        {tab === 'notif' && (
+          <div className="space-y-3">
+            <h2 className="text-base font-bold text-gray-800">School Notifications</h2>
+            {myNotifs.length === 0 && (
+              <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center text-gray-400">
+                <div className="text-3xl mb-2">📢</div>
+                <p className="text-sm">No notifications yet.</p>
+              </div>
+            )}
+            {myNotifs.map(n => (
+              <div key={n.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                <div className="px-4 py-3 border-b border-gray-50 flex items-start justify-between gap-2">
+                  <div>
+                    <p className="font-bold text-gray-800 text-sm">{n.title}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      {n.cls === 'All' ? 'All Classes' : `Class ${n.cls}`} &nbsp;·&nbsp;
+                      {new Date(n.uploadedAt).toLocaleDateString('en-PK',{day:'2-digit',month:'short',year:'numeric'})} &nbsp;·&nbsp;
+                      By {n.uploadedByName || n.uploadedBy}
+                    </p>
+                  </div>
+                  {n.data && (
+                    <button onClick={() => { const w = window.open('','_blank','width=800,height=700'); w.document.write(`<!DOCTYPE html><html><head><title>${n.title}</title><style>body{margin:0;background:#1a1a1a;display:flex;align-items:center;justify-content:center;min-height:100vh}img{max-width:100%;max-height:100vh;object-fit:contain}iframe{width:100%;height:100vh;border:none}</style></head><body>${n.fileType==='pdf' ? `<iframe src="${n.data}"></iframe>` : `<img src="${n.data}"/>`}</body></html>`); w.document.close(); }}
+                      className="shrink-0 bg-red-600 hover:bg-red-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-all">
+                      View / Print
+                    </button>
+                  )}
+                </div>
+                {n.note && <p className="px-4 py-2 text-xs text-gray-500 bg-gray-50">{n.note}</p>}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* ── COMPLAINTS & SUGGESTIONS ── */}
+        {tab === 'complaint' && (
+          <div className="space-y-4 max-w-xl">
+            <h2 className="text-base font-bold text-gray-800">Complaints & Suggestions</h2>
+
+            {cSent && (
+              <div className="bg-green-50 border border-green-200 text-green-700 text-sm px-4 py-3 rounded-xl">
+                ✓ Your {cForm.type} has been submitted successfully. The school administration will review it.
+              </div>
+            )}
+
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+              <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">Submit New</p>
+              <div className="mb-3">
+                <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Type</label>
+                <select value={cForm.type} onChange={e => setCForm({...cForm, type: e.target.value})} className={inputCls}>
+                  <option value="complaint">Complaint</option>
+                  <option value="suggestion">Suggestion</option>
+                </select>
+              </div>
+              <div className="mb-3">
+                <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Subject *</label>
+                <input value={cForm.subject} onChange={e => setCForm({...cForm, subject: e.target.value})}
+                  className={inputCls} placeholder="Brief subject"/>
+              </div>
+              <div className="mb-4">
+                <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Message *</label>
+                <textarea value={cForm.message} onChange={e => setCForm({...cForm, message: e.target.value})}
+                  className={inputCls + ' resize-none'} rows="4" placeholder="Describe in detail..."/>
+              </div>
+              <button onClick={submitComplaint}
+                className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded-xl text-sm transition-all">
+                Submit {cForm.type === 'suggestion' ? 'Suggestion' : 'Complaint'}
+              </button>
+            </div>
+
+            {/* My previous complaints */}
+            {comps.filter(c => c.parentId === currentUser.id).length > 0 && (
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+                <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">My Previous Submissions</p>
+                <div className="space-y-2">
+                  {[...comps.filter(c => c.parentId === currentUser.id)]
+                    .sort((a,b) => new Date(b.submittedAt)-new Date(a.submittedAt))
+                    .map(c => (
+                    <div key={c.id} className="border border-gray-100 rounded-xl p-3">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${c.type==='suggestion' ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}`}>{c.type}</span>
+                        <span className={`text-xs font-semibold ${c.status==='resolved' ? 'text-green-600' : 'text-amber-600'}`}>{c.status === 'resolved' ? '✓ Resolved' : '⏳ Pending'}</span>
+                      </div>
+                      <p className="text-sm font-semibold text-gray-800">{c.subject}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">{new Date(c.submittedAt).toLocaleDateString('en-PK',{day:'2-digit',month:'short',year:'numeric'})}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+      </main>
+    </div>
+  );
+}
+
+// ── NOTIFICATIONS UPLOAD (Teacher / Admin / Principal) ────────────────────────
+function Notifications() {
+  const { role, username, name: userName } = React.useContext(UserContext);
+  const isAdmin     = role === 'admin' || role === 'principal';
+  const [notifs, setNotifs]   = useState(() => S.get(K.NOTIF, []));
+  const [comps, setComps]     = useState(() => S.get(K.COMP, []));
+  const [tab, setTab]         = useState('notifs');
+  const [form, setForm]       = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = React.useRef();
+
+  const persist = d => { S.set(K.NOTIF, d); setNotifs(d); };
+
+  const handleFile = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setUploading(true);
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const isPdf = file.type === 'application/pdf';
+      setForm(f => ({ ...f, data: ev.target.result, fileName: file.name, fileType: isPdf ? 'pdf' : 'image' }));
+      setUploading(false);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const save = () => {
+    if (!form.title.trim()) { alert('Please enter a title.'); return; }
+    const entry = {
+      id: uid(), title: form.title.trim(), cls: form.cls || 'All',
+      note: form.note || '', data: form.data || null, fileName: form.fileName || '',
+      fileType: form.fileType || 'image', uploadedBy: username, uploadedByName: userName,
+      role, uploadedAt: new Date().toISOString(),
+    };
+    persist([entry, ...notifs]);
+    setForm(null);
+    if (fileRef.current) fileRef.current.value = '';
+  };
+
+  const remove = (id) => {
+    if (!window.confirm('Delete this notification?')) return;
+    persist(notifs.filter(n => n.id !== id));
+  };
+
+  const resolveComp = (id) => {
+    const updated = comps.map(c => c.id === id ? { ...c, status: 'resolved' } : c);
+    S.set(K.COMP, updated); setComps(updated);
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-5">
+        <h2 className="text-xl font-bold text-gray-800">Notifications & Complaints</h2>
+        {tab === 'notifs' && <Btn onClick={() => setForm({ title:'', cls:'All', note:'', data:null, fileName:'', fileType:'' })}>+ Upload Notification</Btn>}
+      </div>
+
+      {/* Sub-tabs */}
+      <div className="flex gap-1 mb-5 bg-gray-100 p-1 rounded-xl w-fit">
+        <button onClick={() => setTab('notifs')} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${tab==='notifs' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>📢 Notifications ({notifs.length})</button>
+        <button onClick={() => setTab('comps')} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${tab==='comps' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>📝 Complaints ({comps.filter(c => c.status==='open').length} open)</button>
+      </div>
+
+      {/* Notifications list */}
+      {tab === 'notifs' && (
+        <div className="space-y-3">
+          {notifs.length === 0 && <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center text-gray-400"><div className="text-3xl mb-2">📢</div><p className="text-sm">No notifications uploaded yet.</p></div>}
+          {notifs.map(n => (
+            <Card key={n.id} className="flex items-start gap-3 p-4">
+              <div className="text-2xl mt-0.5">{n.fileType === 'pdf' ? '📄' : '🖼️'}</div>
+              <div className="flex-1 min-w-0">
+                <p className="font-bold text-gray-800 text-sm">{n.title}</p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {n.cls === 'All' ? 'All Classes' : `Class ${n.cls}`} &nbsp;·&nbsp;
+                  {new Date(n.uploadedAt).toLocaleDateString('en-PK',{day:'2-digit',month:'short',year:'numeric'})} &nbsp;·&nbsp;
+                  By {n.uploadedByName || n.uploadedBy}
+                </p>
+                {n.note && <p className="text-xs text-gray-500 mt-1">{n.note}</p>}
+              </div>
+              <div className="flex gap-1 shrink-0">
+                {n.data && <Btn sm variant="outline" onClick={() => { const w = window.open('','_blank','width=800,height=700'); w.document.write(`<!DOCTYPE html><html><head><title>${n.title}</title><style>body{margin:0;background:#111;display:flex;align-items:center;justify-content:center;min-height:100vh}img{max-width:100%;max-height:100vh}iframe{width:100%;height:100vh;border:none}</style></head><body>${n.fileType==='pdf'?`<iframe src="${n.data}"></iframe>`:`<img src="${n.data}"/>`}</body></html>`); w.document.close(); }}>View</Btn>}
+                <Btn sm variant="red" onClick={() => remove(n.id)}>Delete</Btn>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Complaints list */}
+      {tab === 'comps' && (
+        <div className="space-y-3">
+          {comps.length === 0 && <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center text-gray-400"><div className="text-3xl mb-2">📝</div><p className="text-sm">No complaints or suggestions yet.</p></div>}
+          {[...comps].sort((a,b) => new Date(b.submittedAt)-new Date(a.submittedAt)).map(c => (
+            <Card key={c.id} className="p-4">
+              <div className="flex items-start justify-between gap-2 mb-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${c.type==='suggestion' ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}`}>{c.type}</span>
+                  <span className={`text-xs font-semibold ${c.status==='resolved' ? 'text-green-600' : 'text-amber-600'}`}>{c.status==='resolved' ? '✓ Resolved' : '⏳ Open'}</span>
+                </div>
+                {isAdmin && c.status === 'open' && <Btn sm variant="outline" onClick={() => resolveComp(c.id)}>Mark Resolved</Btn>}
+              </div>
+              <p className="font-bold text-gray-800 text-sm">{c.subject}</p>
+              <p className="text-xs text-gray-500 mt-0.5">{c.parentName} &nbsp;·&nbsp; Family {c.familyId} &nbsp;·&nbsp; {new Date(c.submittedAt).toLocaleDateString('en-PK',{day:'2-digit',month:'short',year:'numeric'})}</p>
+              <p className="text-sm text-gray-700 mt-2 bg-gray-50 rounded-lg px-3 py-2">{c.message}</p>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Upload modal */}
+      {form && (
+        <Modal title="Upload Notification" onClose={() => { setForm(null); if (fileRef.current) fileRef.current.value=''; }}>
+          <Inp label="Title *" value={form.title} onChange={e => setForm({...form, title: e.target.value})} placeholder="e.g. Result Card Distribution — Class 5"/>
+          <Field label="For Class">
+            <select value={form.cls} onChange={e => setForm({...form, cls: e.target.value})} className={inputCls}>
+              <option value="All">All Classes</option>
+              {CLASSES.map(c => <option key={c} value={c}>Class {c}</option>)}
+            </select>
+          </Field>
+          <Inp label="Note (optional)" value={form.note} onChange={e => setForm({...form, note: e.target.value})} placeholder="Any extra info"/>
+          <Field label="Attach File (Photo / PDF)">
+            <input ref={fileRef} type="file" accept="image/*,application/pdf" capture="environment"
+              onChange={handleFile} className="w-full text-sm text-gray-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-red-50 file:text-red-700 hover:file:bg-red-100"/>
+          </Field>
+          {uploading && <p className="text-xs text-blue-600 mb-2">⏳ Processing file...</p>}
+          {form.data && <p className="text-xs text-green-600 mb-2">✓ {form.fileName} ready to upload</p>}
+          <div className="flex gap-2 mt-4">
+            <Btn full onClick={save}>Upload Notification</Btn>
+            <Btn variant="outline" onClick={() => { setForm(null); if (fileRef.current) fileRef.current.value=''; }}>Cancel</Btn>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
@@ -532,11 +1054,12 @@ function Dashboard({ setPage }) {
     <div>
       {/* School Header */}
       <div className="bg-white rounded-2xl p-4 mb-6 shadow-lg border-2 border-red-100">
-        <div className="flex items-center justify-between gap-4">
-          <img src={LOGO_SRC} alt="Discovery International School System" className="h-16 sm:h-20 object-contain"
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+          <img src={LOGO_SRC} alt="Discovery International School System" className="h-14 sm:h-20 w-full sm:w-auto object-contain"
             onError={e => { e.target.style.display='none'; }}/>
-          <div className="text-right">
-            <p className="text-gray-500 text-xs">📍 Wagha Road, Jallo More, Lahore &nbsp;|&nbsp; 📞 +92 (322) 8555566</p>
+          <div className="text-center sm:text-right w-full sm:w-auto">
+            <p className="text-gray-500 text-xs leading-relaxed">📍 Wagha Road, Jallo More, Lahore</p>
+            <p className="text-gray-500 text-xs">📞 +92 (322) 8555566</p>
             <p className="text-gray-400 text-xs mt-0.5">{NOW.toLocaleDateString('en-PK', { weekday:'long', year:'numeric', month:'long', day:'numeric' })}</p>
             <button onClick={printDashboard} className="mt-2 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold px-3 py-1.5 rounded-xl transition-all">🖨️ Print</button>
           </div>
@@ -787,255 +1310,240 @@ function Dashboard({ setPage }) {
 // ── STUDENTS ─────────────────────────────────────────────────────────────────
 const blankStu = { name:'', father:'', cls:'1', roll:'', monthlyFee:'', annualFund:'', openingBalance:'', contact:'', address:'', family:'', familyId:'', siblingDiscount:'', photo:'' };
 
+// ── Called by popup to save students into this window ───────────────────────
+window.receiveStudents = function(newStudents) {
+  const existing = S.get(K.STU, []);
+  S.set(K.STU, [...existing, ...newStudents]);
+};
+
 // ── Sibling Registration — opens separate popup window ──────────────────────
 function openSiblingWindow() {
-  const classes    = JSON.stringify(CLASSES);
-  const classFees  = JSON.stringify(S.get(K.CF, {}));
-  const win = window.open('', '_blank', 'width=900,height=820,scrollbars=yes,resizable=yes');
-  win.document.write(`<!DOCTYPE html><html><head><title>Add New Student — DISS</title>
-  <meta charset="utf-8"/>
-  <style>
-    *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:'Segoe UI',Arial,sans-serif;background:#f1f5f9;padding:20px;color:#1a1a1a}
-    .hdr{text-align:center;margin-bottom:18px;padding-bottom:14px;border-bottom:3px solid #c0392b}
-    .hdr h1{font-size:20px;color:#c0392b;font-weight:800;letter-spacing:1px}
-    .hdr p{font-size:12px;color:#6b7280;margin-top:4px}
-    .card{background:#fff;border-radius:14px;padding:18px;margin-bottom:14px;box-shadow:0 1px 4px rgba(0,0,0,0.08)}
-    .card h2{font-size:13px;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #f3f4f6}
-    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-    .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
-    label{display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
-    input,select{width:100%;border:2px solid #e5e7eb;border-radius:8px;padding:8px 12px;font-size:13px;outline:none;transition:.2s}
-    input:focus,select:focus{border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.1)}
-    .preview{font-size:11px;margin-top:5px;padding:6px 10px;border-radius:7px;font-weight:600;min-height:24px}
-    .preview.green{background:#d1fae5;color:#065f46;border:1px solid #6ee7b7}
-    .preview.amber{background:#fef3c7;color:#92400e;border:1px solid #fcd34d}
-    .preview.gray{background:#f3f4f6;color:#6b7280;border:1px solid #e5e7eb}
-    .sib-row{display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:8px;align-items:center;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px;margin-bottom:8px}
-    .btn{padding:10px 20px;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;transition:.2s}
-    .btn-blue{background:#3b82f6;color:#fff}.btn-blue:hover{background:#2563eb}
-    .btn-green{background:#10b981;color:#fff;width:100%;padding:14px;font-size:15px}.btn-green:hover{background:#059669}
-    .btn-red{background:#ef4444;color:#fff;padding:6px 10px;font-size:12px}.btn-red:hover{background:#dc2626}
-    .msg{padding:10px 14px;border-radius:8px;font-size:13px;font-weight:600;margin-bottom:12px;display:none}
-    .msg.success{background:#d1fae5;color:#065f46;border:1px solid #6ee7b7;display:block}
-    .msg.error{background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;display:block}
-    .sibs-header{display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:8px;margin-bottom:4px;padding:0 10px}
-    .sibs-header span{font-size:10px;font-weight:700;color:#9ca3af;text-transform:uppercase}
-  </style></head><body>
-  <div class="hdr">
-    <h1>🎓 Add New Student</h1>
-    <p>Single student or full siblings family — common info entered once</p>
-  </div>
-  <div id="msg" class="msg"></div>
+  const CLSLIST = CLASSES;
+  const CFEES   = S.get(K.CF, {});
+  const win = window.open('', '_blank', 'width=860,height=820,scrollbars=yes,resizable=yes');
+  if (!win) { alert('Popup blocked! Please allow popups for this site.'); return; }
 
-  <div class="card">
-    <h2>👨 Common Family Details</h2>
-    <div class="grid2" style="margin-bottom:10px">
-      <div><label>Father's Name *</label><input id="father" placeholder="Father's full name"/></div>
-      <div><label>Family Name</label><input id="family" placeholder="e.g. Khan Family"/></div>
-    </div>
-    <div class="grid3">
-      <div><label>Family ID</label><input id="familyId" placeholder="e.g. F-001"/></div>
-      <div><label>Contact Number</label><input id="contact" placeholder="0321-1234567"/></div>
-      <div><label>Address</label><input id="address" placeholder="Home address"/></div>
-    </div>
-  </div>
+  var rowCount = 0;
+  var rowPhotos = {};
 
-  <div class="card">
-    <h2>💰 Fee & Financial Details</h2>
-    <div class="grid3">
-      <div>
-        <label>Monthly Fee (Rs.) — student's actual rate</label>
-        <input id="monthlyFee" type="number" min="0" placeholder="0 = pays full class fee"/>
-        <div id="mfPreview" class="preview gray">—</div>
-      </div>
-      <div>
-        <label>Annual Fund (Rs.) — TOTAL for all siblings</label>
-        <input id="annualFund" type="number" min="0" placeholder="e.g. 5000 for whole family"/>
-        <div id="afPreview" class="preview gray">—</div>
-      </div>
-      <div>
-        <label>Sibling Discount (Rs./month) — TOTAL for all siblings</label>
-        <input id="sibDisc" type="number" min="0" placeholder="e.g. 4000 total"/>
-        <div id="sdPreview" class="preview gray">—</div>
-      </div>
-    </div>
-  </div>
+  function uid() { return Math.random().toString(36).slice(2,10) + Date.now().toString(36); }
 
-  <div class="card">
-    <h2>👦👧 Students — Add Each Child</h2>
-    <div class="sibs-header">
-      <span>Full Name *</span><span>Class *</span><span>Roll No *</span><span></span>
-    </div>
-    <div id="sibRows"></div>
-    <button class="btn btn-blue" onclick="addRow()" style="margin-top:8px">+ Add Another Student</button>
-  </div>
+  function clsOptions(sel) {
+    return CLSLIST.map(function(c) {
+      return '<option value="' + c + '"' + (sel === c ? ' selected' : '') + '>Class ' + c + '</option>';
+    }).join('');
+  }
 
-  <button class="btn btn-green" onclick="saveAll()">✅ Save & Add to System</button>
-  <p style="text-align:center;font-size:11px;color:#9ca3af;margin-top:10px">Window closes automatically after saving.</p>
+  function addRow() {
+    rowCount++;
+    var n = rowCount;
+    var container = win.document.getElementById('sibRows');
+    if (!container) return;
+    var div = win.document.createElement('div');
+    div.className = 'sib-row';
+    div.id = 'row' + n;
+    div.innerHTML =
+      '<input id="sname' + n + '" placeholder="Student full name" style="width:100%;border:2px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:13px;outline:none"/>' +
+      '<select id="scls' + n + '" style="width:100%;border:2px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:13px;outline:none">' + clsOptions('1') + '</select>' +
+      '<input id="sroll' + n + '" placeholder="Roll No" style="width:100%;border:2px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:13px;outline:none"/>' +
+      '<div style="text-align:center">' +
+        '<img id="sphimg' + n + '" style="display:none;width:36px;height:36px;border-radius:50%;object-fit:cover;border:2px solid #3b82f6;margin-bottom:3px"/>' +
+        '<label style="display:inline-block;cursor:pointer;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:4px 8px;font-size:10px;color:#1d4ed8;font-weight:700">📷<input type="file" accept="image/*" style="display:none" onchange="handlePhoto(' + n + ',this)"/></label>' +
+      '</div>' +
+      '<button onclick="removeRow(' + n + ')" style="background:#ef4444;color:#fff;border:none;border-radius:8px;padding:6px 10px;font-size:13px;font-weight:700;cursor:pointer">✕</button>';
+    container.appendChild(div);
+  }
 
-  <script>
-    const CLASSES   = ${classes};
-    const CLASS_FEES = ${classFees};
-    let rowCount = 0;
+  function removeRow(n) {
+    var el = win.document.getElementById('row' + n);
+    if (el) el.remove();
+  }
 
-    function getSibCount() {
-      var n = document.querySelectorAll('.sib-row').length;
-      return n > 0 ? n : 1;
+  function handlePhoto(n, input) {
+    var file = input.files[0];
+    if (!file) return;
+    var reader = new win.FileReader();
+    reader.onload = function(e) {
+      rowPhotos[n] = e.target.result;
+      var img = win.document.getElementById('sphimg' + n);
+      if (img) { img.src = e.target.result; img.style.display = 'block'; }
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function saveAll() {
+    var father   = win.document.getElementById('inp_father').value.trim();
+    var family   = win.document.getElementById('inp_family').value.trim();
+    var familyId = win.document.getElementById('inp_familyId').value.trim();
+    var contact  = win.document.getElementById('inp_contact').value.trim();
+    var address  = win.document.getElementById('inp_address').value.trim();
+    var mFee     = win.document.getElementById('inp_mfee').value;
+    var afTotal  = Number(win.document.getElementById('inp_af').value) || 0;
+    var sdTotal  = Number(win.document.getElementById('inp_sd').value) || 0;
+    var msgEl    = win.document.getElementById('msg');
+
+    if (!father) { msgEl.textContent = '❌ Father Name is required.'; msgEl.style.display = 'block'; return; }
+
+    var rows = win.document.querySelectorAll('.sib-row');
+    var siblings = [];
+    var ok = true;
+    rows.forEach(function(row) {
+      var n    = row.id.replace('row', '');
+      var name = (win.document.getElementById('sname' + n) || {}).value || '';
+      var cls  = (win.document.getElementById('scls'  + n) || {}).value || '1';
+      var roll = (win.document.getElementById('sroll' + n) || {}).value || '';
+      name = name.trim(); roll = roll.trim();
+      if (!name || !roll) { ok = false; return; }
+      siblings.push({ name: name, cls: cls, roll: roll, photo: rowPhotos[n] || '' });
+    });
+
+    if (!ok || siblings.length === 0) {
+      msgEl.textContent = '❌ Fill all student names and roll numbers.';
+      msgEl.style.display = 'block';
+      return;
     }
 
-    function updatePreviews() {
-      var mFee  = parseFloat(document.getElementById('monthlyFee').value) || 0;
-      var af    = parseFloat(document.getElementById('annualFund').value)  || 0;
-      var sibD  = parseFloat(document.getElementById('sibDisc').value)     || 0;
-      var count = getSibCount();
+    var count  = siblings.length;
+    var afEach = count > 0 ? Math.round(afTotal / count) : afTotal;
+    var sdEach = count > 0 ? Math.round(sdTotal / count) : sdTotal;
 
-      // ── Monthly Fee → auto discount ──
-      var firstSel = document.querySelector('.sib-row select');
-      var firstCls = firstSel ? firstSel.value : '';
-      var classFee = parseFloat(CLASS_FEES[firstCls]) || 0;
-      var mfEl = document.getElementById('mfPreview');
-      if (mFee > 0 && classFee > 0) {
-        var disc = classFee - mFee;
-        if (disc > 0) {
-          mfEl.className = 'preview green';
-          mfEl.textContent = 'Rs.'+classFee+' class fee  −  Rs.'+disc+' discount  =  Rs.'+mFee+' student pays ✅';
-        } else if (disc === 0) {
-          mfEl.className = 'preview gray';
-          mfEl.textContent = 'Paying full class fee — no discount';
-        } else {
-          mfEl.className = 'preview amber';
-          mfEl.textContent = '⚠️ Amount is more than class fee (Rs.'+classFee+')';
-        }
-      } else if (mFee === 0) {
-        mfEl.className = 'preview gray';
-        mfEl.textContent = 'Blank = pays full class fee';
-      } else {
-        mfEl.className = 'preview gray';
-        mfEl.textContent = 'Class fee not set — discount will auto-calc from system';
-      }
-
-      // ── Annual Fund → divide by sibling count ──
-      var afEl = document.getElementById('afPreview');
-      if (af > 0) {
-        var afEach = Math.round(af / count);
-        afEl.className = 'preview green';
-        if (count > 1) {
-          afEl.textContent = 'Rs.'+af+' total  ÷  '+count+' students  =  Rs.'+afEach+' each ✅';
-        } else {
-          afEl.textContent = 'Rs.'+af+' for this student ✅  (add more students to auto-divide)';
-        }
-      } else {
-        afEl.className = 'preview gray';
-        afEl.textContent = 'Enter total AF for whole family — auto-divided equally';
-      }
-
-      // ── Sibling Discount → divide by sibling count ──
-      var sdEl = document.getElementById('sdPreview');
-      if (sibD > 0) {
-        var sdEach = Math.round(sibD / count);
-        sdEl.className = 'preview green';
-        if (count > 1) {
-          sdEl.textContent = 'Rs.'+sibD+' total  ÷  '+count+' students  =  Rs.'+sdEach+' each ✅';
-        } else {
-          sdEl.textContent = 'Rs.'+sibD+' for this student ✅  (add more students to auto-divide)';
-        }
-      } else {
-        sdEl.className = 'preview gray';
-        sdEl.textContent = 'Enter total discount — auto-divided equally among all students';
-      }
-    }
-
-    function clsOpts(sel) {
-      return CLASSES.map(c => '<option value="'+c+'"'+(sel===c?' selected':'')+'>Class '+c+'</option>').join('');
-    }
-    function addRow(name, cls, roll) {
-      rowCount++;
-      const n = rowCount;
-      const div = document.createElement('div');
-      div.className = 'sib-row';
-      div.id = 'row'+n;
-      div.innerHTML = '<input id="sname'+n+'" placeholder="Student full name" value="'+(name||'')+'"/>'
-        +'<select id="scls'+n+'" onchange="updatePreviews()">'+clsOpts(cls||'1')+'</select>'
-        +'<input id="sroll'+n+'" placeholder="e.g. 101" value="'+(roll||'')+'"/>'
-        +'<button class="btn btn-red" onclick="removeRow('+n+')" title="Remove">✕</button>';
-      document.getElementById('sibRows').appendChild(div);
-      updatePreviews();
-    }
-    function removeRow(n) {
-      const el = document.getElementById('row'+n);
-      if (el) { el.remove(); updatePreviews(); }
-    }
-    function showMsg(txt, type) {
-      const el = document.getElementById('msg');
-      el.textContent = txt; el.className = 'msg '+type;
-      setTimeout(() => el.className='msg', 4000);
-    }
-    function saveAll() {
-      const father   = document.getElementById('father').value.trim();
-      const family   = document.getElementById('family').value.trim();
-      const familyId = document.getElementById('familyId').value.trim();
-      const contact  = document.getElementById('contact').value.trim();
-      const address  = document.getElementById('address').value.trim();
-      const mFee     = document.getElementById('monthlyFee').value;
-      const afTotal  = Number(document.getElementById('annualFund').value) || 0;
-      const sdTotal  = Number(document.getElementById('sibDisc').value) || 0;
-      if (!father) { showMsg('❌ Father Name is required.', 'error'); return; }
-      const rows = document.querySelectorAll('.sib-row');
-      const siblings = [];
-      let ok = true;
-      rows.forEach(row => {
-        const id   = row.id.replace('row','');
-        const name = document.getElementById('sname'+id)?.value.trim();
-        const cls  = document.getElementById('scls'+id)?.value;
-        const roll = document.getElementById('sroll'+id)?.value.trim();
-        if (!name || !roll) { ok=false; return; }
-        siblings.push({ name, cls, roll });
-      });
-      if (!ok || siblings.length === 0) { showMsg('❌ Fill all student names and roll numbers.', 'error'); return; }
-      // Divide annual fund & sibling discount equally among all siblings
-      const count    = siblings.length;
-      const afEach   = count > 0 ? Math.round(afTotal / count) : afTotal;
-      const sdEach   = count > 0 ? Math.round(sdTotal / count) : sdTotal;
-      const existing = JSON.parse(localStorage.getItem('sms_stu') || '[]');
-      const uid      = () => Math.random().toString(36).slice(2,10)+Date.now().toString(36);
-      const newStudents = siblings.map(s => ({
-        id: uid(), name: s.name, father, cls: s.cls, roll: s.roll,
-        monthlyFee: mFee||'',
+    var newStudents = siblings.map(function(s) {
+      return {
+        id: uid(), name: s.name, father: father, cls: s.cls, roll: s.roll,
+        monthlyFee: mFee || '',
         annualFund: afEach > 0 ? String(afEach) : '',
-        openingBalance: '', contact, address,
-        family: family || (father+' Family'),
-        familyId,
+        openingBalance: '', contact: contact, address: address,
+        family: family || (father + ' Family'),
+        familyId: familyId,
         siblingDiscount: sdEach > 0 ? String(sdEach) : '',
-        photo: ''
-      }));
-      const updated = [...existing, ...newStudents];
-      localStorage.setItem('sms_stu', JSON.stringify(updated));
-      // ── Replace entire page immediately so form can't be resubmitted ──
-      document.body.innerHTML = '<div style="text-align:center;padding:80px 40px;font-family:\'Segoe UI\',sans-serif;background:#f0fdf4;min-height:100vh">'
-        +'<div style="font-size:72px;margin-bottom:20px">✅</div>'
-        +'<h2 style="color:#059669;font-size:28px;font-weight:800;margin-bottom:12px">'+newStudents.length+' Student(s) Saved!</h2>'
-        +'<p style="color:#6b7280;font-size:15px;margin-bottom:8px">Annual Fund: Rs.'+afEach+' each &nbsp;|&nbsp; Sibling Discount: Rs.'+sdEach+' each</p>'
-        +'<p style="color:#9ca3af;font-size:13px;margin-bottom:30px">Main window is refreshing… This window will close automatically.</p>'
-        +'<button onclick="window.close()" style="padding:14px 36px;background:#10b981;color:#fff;border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;box-shadow:0 4px 12px rgba(16,185,129,.3)">✕ Close Window</button>'
-        +'</div>';
-      // Reload parent + close this window (try multiple times)
-      try { if (window.opener && !window.opener.closed) window.opener.location.reload(); } catch(e) {}
-      window.close();
-      setTimeout(function(){ window.close(); }, 500);
-      setTimeout(function(){ window.close(); }, 1500);
-      setTimeout(function(){ window.close(); }, 3000);
-    }
-    // Start with 1 row FIRST — must run before anything else
-    addRow();
-    updatePreviews();
-    // Attach live preview listeners
+        photo: s.photo || ''
+      };
+    });
+
     try {
-      document.getElementById('monthlyFee').addEventListener('input', updatePreviews);
-      document.getElementById('annualFund').addEventListener('input', updatePreviews);
-      document.getElementById('sibDisc').addEventListener('input', updatePreviews);
-    } catch(e) {}
-  <\/script></body></html>`);
+      if (window.opener && !window.opener.closed && window.opener.receiveStudents) {
+        window.opener.receiveStudents(newStudents);
+      } else {
+        var ex = JSON.parse(localStorage.getItem('sms_stu') || '[]');
+        localStorage.setItem('sms_stu', JSON.stringify(ex.concat(newStudents)));
+      }
+    } catch(e) {
+      var ex2 = JSON.parse(localStorage.getItem('sms_stu') || '[]');
+      localStorage.setItem('sms_stu', JSON.stringify(ex2.concat(newStudents)));
+    }
+
+    win.document.body.innerHTML =
+      '<div style="text-align:center;padding:80px 40px;font-family:Segoe UI,Arial,sans-serif;background:#f0fdf4;min-height:100vh">' +
+      '<div style="font-size:72px;margin-bottom:20px">✅</div>' +
+      '<h2 style="color:#059669;font-size:26px;font-weight:800;margin-bottom:12px">' + newStudents.length + ' Student(s) Saved!</h2>' +
+      '<p style="color:#9ca3af;font-size:13px;margin-bottom:30px">Main window is refreshing…</p>' +
+      '<button onclick="window.close()" style="padding:12px 32px;background:#10b981;color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer">✕ Close</button>' +
+      '</div>';
+
+    try { if (window.opener && !window.opener.closed) window.opener.location.reload(); } catch(e) {}
+    setTimeout(function() { win.close(); }, 2000);
+  }
+
+  // expose functions to popup window
+  win.removeRow   = removeRow;
+  win.handlePhoto = handlePhoto;
+  win.saveAll     = saveAll;
+  win.addMoreRow  = addRow;
+
+  win.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Add New Student</title>' +
+  '<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Segoe UI,Arial,sans-serif;background:#f1f5f9;padding:20px;color:#1a1a1a}' +
+  '.hdr{text-align:center;margin-bottom:16px;padding-bottom:12px;border-bottom:3px solid #c0392b}' +
+  '.hdr h1{font-size:20px;color:#c0392b;font-weight:800}.hdr p{font-size:12px;color:#6b7280;margin-top:4px}' +
+  '.card{background:#fff;border-radius:14px;padding:16px;margin-bottom:12px;box-shadow:0 1px 4px rgba(0,0,0,.08)}' +
+  '.card h2{font-size:12px;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #f3f4f6}' +
+  '.g2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}' +
+  '.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}' +
+  '.fl{display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;margin-bottom:3px}' +
+  '.fi{width:100%;border:2px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:13px;outline:none}' +
+  '.fi:focus{border-color:#3b82f6}' +
+  '.sib-row{display:grid;grid-template-columns:2.5fr 1.2fr 1fr 60px 36px;gap:8px;align-items:center;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px;margin-bottom:8px}' +
+  '.sh{display:grid;grid-template-columns:2.5fr 1.2fr 1fr 60px 36px;gap:8px;margin-bottom:4px;padding:0 10px}' +
+  '.sh span{font-size:10px;font-weight:700;color:#9ca3af;text-transform:uppercase}' +
+  '.btn-add{background:#3b82f6;color:#fff;border:none;border-radius:10px;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer;margin-top:8px}' +
+  '.btn-save{background:#10b981;color:#fff;border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:700;cursor:pointer;width:100%}' +
+  '#msg{display:none;padding:10px;border-radius:8px;background:#fee2e2;color:#991b1b;font-size:13px;font-weight:600;margin-bottom:10px}' +
+  '</style></head><body>' +
+  '<div class="hdr"><h1>🎓 Add New Student</h1><p>Single student or full siblings — common info entered once</p></div>' +
+  '<div id="msg"></div>' +
+  '<div class="card"><h2>👨 Common Family Details</h2>' +
+  '<div class="g2"><div><span class="fl">Father\'s Name *</span><input class="fi" id="inp_father" placeholder="Father\'s full name"/></div>' +
+  '<div><span class="fl">Family Name</span><input class="fi" id="inp_family" placeholder="e.g. Khan Family"/></div></div>' +
+  '<div class="g3"><div><span class="fl">Family ID</span><input class="fi" id="inp_familyId" placeholder="F-001"/></div>' +
+  '<div><span class="fl">Contact</span><input class="fi" id="inp_contact" placeholder="0321-1234567"/></div>' +
+  '<div><span class="fl">Address</span><input class="fi" id="inp_address" placeholder="Home address"/></div></div></div>' +
+  '<div class="card"><h2>💰 Fee & Financial Details</h2><div class="g3">' +
+  '<div><span class="fl">Monthly Fee (Rs.)</span><input class="fi" type="number" min="0" id="inp_mfee" placeholder="0 = full class fee"/></div>' +
+  '<div><span class="fl">Annual Fund Rs. (total all siblings)</span><input class="fi" type="number" min="0" id="inp_af" placeholder="e.g. 5000"/></div>' +
+  '<div><span class="fl">Sibling Discount Rs. (total)</span><input class="fi" type="number" min="0" id="inp_sd" placeholder="e.g. 4000"/></div>' +
+  '</div></div>' +
+  '<div class="card"><h2>👦👧 Students — Add Each Child</h2>' +
+  '<div class="sh"><span>Full Name *</span><span>Class *</span><span>Roll No *</span><span>Photo</span><span></span></div>' +
+  '<div id="sibRows"></div>' +
+  '<button class="btn-add" onclick="addMoreRow()">+ Add Another Student</button></div>' +
+  '<button class="btn-save" onclick="saveAll()">✅ Save & Add to System</button>' +
+  '<p style="text-align:center;font-size:11px;color:#9ca3af;margin-top:10px">Window closes automatically after saving.</p>' +
+  '</body></html>');
+  win.document.close();
+
+  // Add first row after document is ready
+  setTimeout(function() { addRow(); }, 100);
+}
+
+function printIdCard(s) {
+  const logo = LOGO_SRC;
+  const photoHtml = s.photo
+    ? `<img src="${s.photo}" style="width:80px;height:80px;border-radius:50%;object-fit:cover;border:3px solid #1e3a8a;margin:0 auto 10px;display:block"/>`
+    : `<div style="width:80px;height:80px;border-radius:50%;background:#dbeafe;border:3px solid #1e3a8a;margin:0 auto 10px;display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:900;color:#1e3a8a">${s.name[0]}</div>`;
+  const win = window.open('', '_blank', 'width=420,height=320');
+  win.document.write(`<!DOCTYPE html><html><head><title>ID Card — ${s.name}</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:'Segoe UI',Arial,sans-serif;background:#f1f5f9;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}
+    .card{width:340px;background:linear-gradient(160deg,#1e3a8a 0%,#1e40af 55%,#fff 55%);border-radius:16px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.25);position:relative}
+    .top{padding:18px 20px 60px;text-align:center;color:#fff}
+    .top img.logo{height:42px;object-fit:contain;margin-bottom:8px}
+    .top h1{font-size:11px;font-weight:800;letter-spacing:.8px;text-transform:uppercase;line-height:1.4}
+    .top p{font-size:9px;opacity:.8;margin-top:3px}
+    .photo-wrap{position:absolute;left:50%;transform:translateX(-50%);top:105px}
+    .bottom{padding:58px 20px 18px;text-align:center}
+    .stu-name{font-size:15px;font-weight:800;color:#1e293b;margin-bottom:4px}
+    .father{font-size:11px;color:#475569;margin-bottom:10px}
+    .badges{display:flex;justify-content:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+    .badge{background:#eff6ff;border:1px solid #bfdbfe;border-radius:20px;padding:4px 12px;font-size:10px;font-weight:700;color:#1e40af}
+    .badge.roll{background:#f0fdf4;border-color:#bbf7d0;color:#15803d}
+    .footer{font-size:8px;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:8px}
+    @media print{body{background:#fff}.card{box-shadow:none}}
+  </style></head><body>
+  <div>
+    <div class="card">
+      <div class="top">
+        <img class="logo" src="${logo}" onerror="this.style.display='none'"/>
+        <h1>Discovery International School System</h1>
+        <p>Wagha Road, Jallo More, Lahore</p>
+      </div>
+      <div class="photo-wrap">${photoHtml}</div>
+      <div class="bottom">
+        <div class="stu-name">${s.name}</div>
+        <div class="father">S/O: ${s.father || '—'}</div>
+        <div class="badges">
+          <span class="badge">Class ${s.cls}</span>
+          <span class="badge roll">Roll # ${s.roll}</span>
+          ${s.contact ? `<span class="badge">${s.contact}</span>` : ''}
+        </div>
+        <div class="footer">STUDENT ID CARD &nbsp;|&nbsp; ${new Date().getFullYear()}</div>
+      </div>
+    </div>
+    <div style="text-align:center;margin-top:14px">
+      <button onclick="window.print()" style="padding:10px 28px;background:#1e40af;color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;margin-right:8px">🖨️ Print</button>
+      <button onclick="window.close()" style="padding:10px 20px;background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer">✕ Close</button>
+    </div>
+  </div>
+  </body></html>`);
   win.document.close();
 }
 
@@ -1186,6 +1694,7 @@ function Students() {
                       <td className="px-4 py-3 text-gray-500 hidden md:table-cell">{s.contact || '—'}</td>
                       <td className="px-4 py-3 text-gray-500 hidden md:table-cell text-xs">{s.address || '—'}</td>
                       <td className="px-4 py-3 text-right space-x-1">
+                        <Btn sm variant="outline" onClick={() => printIdCard(s)}>🪪 ID Card</Btn>
                         {isAdmin && <Btn sm variant="outline" onClick={() => window.requireMasterCode(() => openEdit(s), `Edit student: ${s.name}`)}>Edit</Btn>}
                         {isAdmin && <Btn sm variant="red" onClick={() => window.requireMasterCode(() => setDelId(s.id), `Delete student: ${s.name}`)}>Delete</Btn>}
                       </td>
@@ -4616,11 +5125,15 @@ function Staff() {
 function UserAdmin({ onPasswordChange }) {
   const { role, id: selfId } = React.useContext(UserContext);
   const isAdmin = role === 'admin';
-  const [users, setUsers]   = useState(() => S.get(K.USERS, []));
-  const [form, setForm]     = useState(null);
-  const [delId, setDelId]   = useState(null);
-  const [pwMod, setPwMod]   = useState(null); // change own password
-  const [pwForm, setPwForm] = useState({ cur:'', newp:'', conf:'' });
+  const [users, setUsers]       = useState(() => S.get(K.USERS, []));
+  const [form, setForm]         = useState(null);
+  const [delId, setDelId]       = useState(null);
+  const [pwMod, setPwMod]       = useState(null);
+  const [pwForm, setPwForm]     = useState({ cur:'', newp:'', conf:'' });
+  const [adminReset, setAdminReset] = useState(null); // { user, newp }
+  const [tab, setTab]           = useState('users');
+  const [preqs, setPreqs]       = useState(() => S.get(K.PREQ, []));
+  const [viewPw, setViewPw]     = useState({});
 
   const persist = d => { S.set(K.USERS, d); setUsers(d); };
 
@@ -4629,7 +5142,8 @@ function UserAdmin({ onPasswordChange }) {
     if (!form.id && !form.password.trim()) return alert('Password is required for new users.');
     if (!form.id && users.find(u => u.username === form.username.trim())) return alert('Username already exists.');
     const item = { ...form, username: form.username.trim(), name: form.name.trim() };
-    const u = form.id ? users.map(x => x.id === form.id ? item : x) : [...users, { ...item, id: uid() }];
+    if (form.id && !form.password.trim()) delete item.password;
+    const u = form.id ? users.map(x => x.id === form.id ? { ...x, ...item } : x) : [...users, { ...item, id: uid() }];
     persist(u); setForm(null);
   };
 
@@ -4652,52 +5166,131 @@ function UserAdmin({ onPasswordChange }) {
     alert('Password changed successfully.');
   };
 
+  const adminResetPw = () => {
+    if (!adminReset.newp.trim()) return alert('Enter a new password.');
+    const updated = users.map(u => u.id === adminReset.user.id ? { ...u, password: adminReset.newp } : u);
+    persist(updated); setAdminReset(null);
+    alert(`Password for ${adminReset.user.name} reset successfully.`);
+  };
+
+  const approveParent = (reqId) => {
+    const req = preqs.find(r => r.id === reqId);
+    if (!req) return;
+    const updated = users.map(u => u.id === req.id ? { ...u, status: 'active' } : u);
+    persist(updated);
+    const updPreqs = preqs.filter(r => r.id !== reqId);
+    S.set(K.PREQ, updPreqs); setPreqs(updPreqs);
+    alert(`${req.name} approved. They can now login.`);
+  };
+
+  const rejectParent = (reqId) => {
+    const req = preqs.find(r => r.id === reqId);
+    if (!req) return;
+    const updated = users.map(u => u.id === req.id ? { ...u, status: 'rejected' } : u);
+    persist(updated);
+    const updPreqs = preqs.filter(r => r.id !== reqId);
+    S.set(K.PREQ, updPreqs); setPreqs(updPreqs);
+  };
+
+  const roleBadge = (r) => {
+    const map = { admin:'blue', principal:'green', teacher:'purple', staff:'gray', parent:'yellow' };
+    const label = { admin:'🔐 Admin', principal:'🎓 Principal', teacher:'📖 Teacher', staff:'👤 Staff', parent:'👨‍👩‍👧 Parent' };
+    return <Badge color={map[r]||'gray'}>{label[r]||r}</Badge>;
+  };
+
+  const pendingCount = preqs.filter(r => users.find(u => u.id===r.id && u.status==='pending')).length;
+
   return (
     <div>
       <div className="flex items-center justify-between mb-5">
         <h2 className="text-xl font-bold text-gray-800">User Management</h2>
         <div className="flex gap-2">
-          <Btn variant="outline" onClick={() => { setPwMod(true); setPwForm({ cur:'', newp:'', conf:'' }); }}>🔑 Change My Password</Btn>
+          <Btn variant="outline" onClick={() => { setPwMod(true); setPwForm({ cur:'', newp:'', conf:'' }); }}>🔑 My Password</Btn>
           {isAdmin && <Btn onClick={() => setForm({ username:'', password:'', name:'', role:'staff' })}>+ Add User</Btn>}
         </div>
       </div>
 
+      {/* Sub-tabs */}
+      <div className="flex gap-1 mb-5 bg-gray-100 p-1 rounded-xl w-fit">
+        <button onClick={() => setTab('users')} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${tab==='users' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500'}`}>All Users ({users.length})</button>
+        {isAdmin && <button onClick={() => setTab('pending')} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${tab==='pending' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500'}`}>
+          Parent Requests {pendingCount > 0 && <span className="ml-1 bg-red-500 text-white text-xs rounded-full px-1.5">{pendingCount}</span>}
+        </button>}
+      </div>
+
       {!isAdmin && <div className="bg-amber-50 border border-amber-200 text-amber-700 text-sm px-4 py-3 rounded-xl mb-4">⚠️ You have view-only access. Contact admin to manage users.</div>}
 
-      <Card className="overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 border-b">
-              <tr className="text-left text-xs text-gray-500 font-semibold uppercase">
-                <th className="px-4 py-3">Full Name</th>
-                <th className="px-4 py-3">Username</th>
-                <th className="px-4 py-3">Role</th>
-                {isAdmin && <th className="px-4 py-3 text-right">Actions</th>}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {users.map(u => (
-                <tr key={u.id} className="hover:bg-slate-50">
-                  <td className="px-4 py-3 font-semibold text-gray-800">{u.name}</td>
-                  <td className="px-4 py-3 font-mono text-gray-600">{u.username}</td>
-                  <td className="px-4 py-3">
-                    <Badge color={u.role === 'admin' ? 'blue' : u.role === 'principal' ? 'green' : 'gray'}>
-                      {u.role === 'admin' ? '🔐 Admin' : u.role === 'principal' ? '🎓 Principal' : '👤 Staff'}
-                    </Badge>
-                  </td>
-                  {isAdmin && (
-                    <td className="px-4 py-3 text-right space-x-1">
-                      <Btn sm variant="outline" onClick={() => window.requireMasterCode(() => setForm({ ...u, password:'' }), `Edit user: ${u.name}`)}>Edit</Btn>
-                      {u.role !== 'admin' && u.role !== 'principal' && <Btn sm variant="red" onClick={() => window.requireMasterCode(() => setDelId(u.id), `Delete user: ${u.name}`)}>Delete</Btn>}
-                      {(u.role === 'admin' || u.role === 'principal') && <span className="text-xs text-gray-300 px-2">🔒 Protected</span>}
-                    </td>
-                  )}
+      {/* All Users Tab */}
+      {tab === 'users' && (
+        <Card className="overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b">
+                <tr className="text-left text-xs text-gray-500 font-semibold uppercase">
+                  <th className="px-4 py-3">Full Name</th>
+                  <th className="px-4 py-3">Username</th>
+                  <th className="px-4 py-3">Role</th>
+                  {isAdmin && <th className="px-4 py-3">Password</th>}
+                  {isAdmin && <th className="px-4 py-3 text-right">Actions</th>}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {users.map(u => (
+                  <tr key={u.id} className="hover:bg-slate-50">
+                    <td className="px-4 py-3 font-semibold text-gray-800">
+                      {u.name}
+                      {u.status === 'pending' && <span className="ml-2 text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-semibold">Pending</span>}
+                      {u.status === 'rejected' && <span className="ml-2 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-semibold">Rejected</span>}
+                      {u.familyId && <span className="ml-2 text-xs text-gray-400">({u.familyId})</span>}
+                    </td>
+                    <td className="px-4 py-3 font-mono text-gray-600">{u.username}</td>
+                    <td className="px-4 py-3">{roleBadge(u.role)}</td>
+                    {isAdmin && (
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1">
+                          <span className="font-mono text-xs text-gray-600">{viewPw[u.id] ? u.password : '••••••'}</span>
+                          <button onClick={() => setViewPw(v => ({...v, [u.id]: !v[u.id]}))} className="text-xs text-gray-400 hover:text-gray-700 px-1">{viewPw[u.id] ? 'Hide' : 'Show'}</button>
+                        </div>
+                      </td>
+                    )}
+                    {isAdmin && (
+                      <td className="px-4 py-3 text-right space-x-1">
+                        <Btn sm variant="outline" onClick={() => window.requireMasterCode(() => setAdminReset({ user: u, newp: '' }), `Reset password: ${u.name}`)}>Reset PW</Btn>
+                        <Btn sm variant="outline" onClick={() => window.requireMasterCode(() => setForm({ ...u, password:'' }), `Edit user: ${u.name}`)}>Edit</Btn>
+                        {u.role !== 'admin' && u.role !== 'principal' && <Btn sm variant="red" onClick={() => window.requireMasterCode(() => setDelId(u.id), `Delete user: ${u.name}`)}>Del</Btn>}
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
+      {/* Parent Requests Tab */}
+      {tab === 'pending' && isAdmin && (
+        <div className="space-y-3">
+          {preqs.filter(r => users.find(u => u.id===r.id && u.status==='pending')).length === 0 && (
+            <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center text-gray-400"><div className="text-3xl mb-2">👨‍👩‍👧</div><p className="text-sm">No pending parent registration requests.</p></div>
+          )}
+          {preqs.filter(r => users.find(u => u.id===r.id && u.status==='pending')).map(r => (
+            <Card key={r.id} className="p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="font-bold text-gray-800">{r.name}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">Username: <strong>{r.username}</strong> &nbsp;·&nbsp; Family ID: <strong>{r.familyId}</strong></p>
+                  <p className="text-xs text-gray-400 mt-0.5">Requested: {new Date(r.requestedAt).toLocaleDateString('en-PK',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</p>
+                </div>
+                <div className="flex gap-2 shrink-0">
+                  <Btn sm variant="outline" onClick={() => approveParent(r.id)}>✓ Approve</Btn>
+                  <Btn sm variant="red" onClick={() => rejectParent(r.id)}>✗ Reject</Btn>
+                </div>
+              </div>
+            </Card>
+          ))}
         </div>
-      </Card>
+      )}
 
       {form && (
         <Modal title={form.id ? 'Edit User' : 'Add New User'} onClose={() => setForm(null)}>
@@ -4706,7 +5299,7 @@ function UserAdmin({ onPasswordChange }) {
           <Inp label={form.id ? 'New Password (leave blank to keep)' : 'Password *'} type="password"
             value={form.password} onChange={e => setForm({...form, password: e.target.value})} placeholder="Password"/>
           <Sel label="Role" value={form.role} onChange={e => setForm({...form, role: e.target.value})}
-            options={[{v:'admin',l:'Admin — Full Access + Edit & Delete'},{v:'principal',l:'Principal — View All, No Edit or Delete'},{v:'staff',l:'Staff — View + Fee Collection Only'}]}/>
+            options={[{v:'admin',l:'Admin — Full Access'},{v:'principal',l:'Principal — View All, No Edit/Delete'},{v:'teacher',l:'Teacher — Notifications & Complaints'},{v:'staff',l:'Staff — Fee Collection'}]}/>
           <div className="flex gap-2 mt-5">
             <Btn full onClick={save}>{form.id ? 'Update User' : 'Save User'}</Btn>
             <Btn variant="outline" onClick={() => setForm(null)}>Cancel</Btn>
@@ -4732,6 +5325,17 @@ function UserAdmin({ onPasswordChange }) {
           <div className="flex gap-2 mt-5">
             <Btn full variant="green" onClick={changePw}>Change Password</Btn>
             <Btn variant="outline" onClick={() => setPwMod(null)}>Cancel</Btn>
+          </div>
+        </Modal>
+      )}
+
+      {adminReset && (
+        <Modal title={`Reset Password — ${adminReset.user.name}`} onClose={() => setAdminReset(null)}>
+          <p className="text-xs text-gray-500 mb-4">Set a new password for <strong>{adminReset.user.name}</strong> ({adminReset.user.role}). Current password: <span className="font-mono">{adminReset.user.password}</span></p>
+          <Inp label="New Password *" type="text" value={adminReset.newp} onChange={e => setAdminReset({...adminReset, newp: e.target.value})} placeholder="Enter new password"/>
+          <div className="flex gap-2 mt-5">
+            <Btn full variant="green" onClick={adminResetPw}>Reset Password</Btn>
+            <Btn variant="outline" onClick={() => setAdminReset(null)}>Cancel</Btn>
           </div>
         </Modal>
       )}
@@ -7353,18 +7957,10 @@ function App() {
           const incoming = JSON.stringify(data[k]);
           if (current !== incoming) { localStorage.setItem(k, incoming); changed = true; }
         });
-        // If cloud had newer data, show refresh toast
-        if (changed) {
-          const toast = document.createElement('div');
-          toast.innerHTML = '☁️ Cloud data loaded — <b style="cursor:pointer;text-decoration:underline" onclick="location.reload()">tap to refresh</b>';
-          Object.assign(toast.style, {
-            position:'fixed', bottom:'20px', left:'50%', transform:'translateX(-50%)',
-            background:'#1e40af', color:'#fff', padding:'12px 20px', borderRadius:'8px',
-            fontSize:'13px', zIndex:'99999', boxShadow:'0 4px 12px rgba(0,0,0,0.3)',
-            whiteSpace:'nowrap'
-          });
-          document.body.appendChild(toast);
-          setTimeout(() => toast.remove(), 6000);
+        // If cloud had newer data, reload once (guard against loops via sessionStorage)
+        if (changed && !sessionStorage.getItem('_fbSynced')) {
+          sessionStorage.setItem('_fbSynced', '1');
+          location.reload();
         }
       }
       window._fbConnected = true;
@@ -7386,16 +7982,7 @@ function App() {
           const freshData = fresh.val();
           if (freshData) {
             Object.keys(freshData).forEach(k => localStorage.setItem(k, JSON.stringify(freshData[k])));
-            const toast = document.createElement('div');
-            toast.innerHTML = '☁️ New data from another device — <b style="cursor:pointer;text-decoration:underline" onclick="location.reload()">tap to refresh</b>';
-            Object.assign(toast.style, {
-              position:'fixed', bottom:'20px', left:'50%', transform:'translateX(-50%)',
-              background:'#065f46', color:'#fff', padding:'12px 20px', borderRadius:'8px',
-              fontSize:'13px', zIndex:'99999', boxShadow:'0 4px 12px rgba(0,0,0,0.3)',
-              whiteSpace:'nowrap'
-            });
-            document.body.appendChild(toast);
-            setTimeout(() => toast.remove(), 6000);
+            if (!window._reloading) { window._reloading = true; location.reload(); }
           }
         } catch(e) {}
       });

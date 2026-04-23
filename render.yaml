@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: diss-school-management
+    env: static
+    staticPublishPath: .
+    buildCommand: ""
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html

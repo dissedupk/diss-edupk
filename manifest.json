@@ -1,0 +1,25 @@
+{
+  "name": "Discovery International School System",
+  "short_name": "DISS",
+  "description": "School Management System — Discovery International School System, Lahore",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f1f5f9",
+  "theme_color": "#c0392b",
+  "icons": [
+    {
+      "src": "diss-app/logo diss/for main sreeen when loading.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "diss-app/logo diss/for main sreeen when loading.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["education", "productivity"]
+}
