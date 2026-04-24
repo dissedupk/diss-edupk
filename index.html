@@ -139,6 +139,11 @@ const S = {
 const K = { STU:'sms_stu', INV:'sms_inv', TX:'sms_tx', CF:'sms_cf', PAY:'sms_pay', EXP:'sms_exp', AF:'sms_af', STAFF:'sms_staff', SPAY:'sms_spay', BL:'sms_bl', DS:'sms_ds', RS:'sms_rs', VENDOR:'sms_vend', SBOOK:'sms_sbook', USERS:'sms_users', SESS:'sms_sess', VPAY:'sms_vpay', ACCT:'sms_acct', CBOOK:'sms_cbook', PERM:'sms_perm', AUDIT:'sms_audit', PREQ:'sms_preq', NOTIF:'sms_notif', COMP:'sms_comp' };
 window.S = S; window.K = K;
 
+// Session stored in sessionStorage — clears automatically when browser/PWA is closed
+const getSession  = () => { try { const v = sessionStorage.getItem('sms_sess'); return v ? JSON.parse(v) : null; } catch { return null; } };
+const setSession  = (v) => { try { if (v === null || v === undefined) sessionStorage.removeItem('sms_sess'); else sessionStorage.setItem('sms_sess', JSON.stringify(v)); } catch {} };
+const clearSession = () => { sessionStorage.removeItem('sms_sess'); };
+
 // ── Permission Context ─────────────────────────────────────────────────────────
 const PermContext = React.createContext({ staffCanModify: false });
 
@@ -147,7 +152,7 @@ const PermContext = React.createContext({ staffCanModify: false });
 (function() { const p = S.get(K.PERM, {}); if (!p.adminPin) S.set(K.PERM, { ...p, adminPin: '5555' }); })();
 
 const logAudit = (userId, username, action, module, oldVal, newVal) => {
-  const sess = S.get(K.SESS, {});
+  const sess = getSession() || {};
   const userRole = sess.role || 'admin'; // auto-capture role from session
   const logs = S.get(K.AUDIT, []);
   logs.unshift({ id: Date.now(), userId, username, role: userRole, action, module, oldVal: JSON.stringify(oldVal), newVal: JSON.stringify(newVal), timestamp: new Date().toISOString() });
@@ -358,7 +363,7 @@ function LoginScreen({ onLogin }) {
   const [err, setErr]         = useState('');
   const [showPass, setShowPass] = useState(false);
   const [regMode, setRegMode] = useState(false);
-  const [reg, setReg]         = useState({ familyId:'', username:'', password:'', confirm:'', name:'' });
+  const [reg, setReg]         = useState({ username:'', password:'', confirm:'', name:'' });
   const [regMsg, setRegMsg]   = useState('');
 
   const switchTab = (t) => { setTab(t); setErr(''); setRegMode(false); setRegMsg(''); setUname(''); setPass(''); };
@@ -375,28 +380,25 @@ function LoginScreen({ onLogin }) {
     if (tab === 'parent' && user.role !== 'parent') { setErr('Please use the Admin / Staff Login tab.'); return; }
     if (user.status === 'pending') { setErr('Your account is pending admin approval. Please wait.'); return; }
     if (user.status === 'rejected') { setErr('Your registration was rejected. Contact the school office.'); return; }
-    S.set(K.SESS, user); onLogin(user);
+    if (user.disabled) { setErr('Your account has been disabled. Please contact the school office.'); return; }
+    setSession(user); onLogin(user);
   };
 
   const register = () => {
     setRegMsg('');
-    if (!reg.familyId.trim()) { setRegMsg('Please enter your Family ID.'); return; }
     if (!reg.name.trim())     { setRegMsg('Please enter your full name.'); return; }
     if (!reg.username.trim()) { setRegMsg('Please choose a username.'); return; }
     if (!reg.password.trim()) { setRegMsg('Please enter a password.'); return; }
     if (reg.password !== reg.confirm) { setRegMsg('Passwords do not match.'); return; }
-    const students = S.get(K.STU, []);
-    const familyExists = students.some(s => s.familyId && s.familyId.trim() === reg.familyId.trim());
-    if (!familyExists) { setRegMsg('Family ID not found in school records. Please check with the school office.'); return; }
     const users = S.get(K.USERS, []);
     if (users.find(u => u.username === reg.username.trim())) { setRegMsg('Username already taken. Please choose another.'); return; }
-    const newUser = { id: uid(), username: reg.username.trim(), password: reg.password, name: reg.name.trim(), role: 'parent', familyId: reg.familyId.trim(), status: 'pending' };
+    const newUser = { id: uid(), username: reg.username.trim(), password: reg.password, name: reg.name.trim(), role: 'parent', familyId: '', status: 'pending' };
     S.set(K.USERS, [...users, newUser]);
     const preqs = S.get(K.PREQ, []);
     S.set(K.PREQ, [...preqs, { ...newUser, requestedAt: new Date().toISOString() }]);
-    setReg({ familyId:'', username:'', password:'', confirm:'', name:'' });
+    setReg({ username:'', password:'', confirm:'', name:'' });
     setRegMode(false);
-    alert('Registration submitted!\nYour account is pending admin approval.\nYou can login after the admin approves your request.');
+    alert('Registration submitted!\nYour request has been sent to the school admin.\nYou can login once the admin approves and assigns your Family ID.');
   };
 
   return (
@@ -488,14 +490,9 @@ function LoginScreen({ onLogin }) {
         {tab === 'parent' && regMode && (
           <>
             <div className="bg-blue-50 border border-blue-200 text-blue-700 text-xs px-3 py-2 rounded-xl mb-4 leading-relaxed">
-              Enter your <strong>Family ID</strong> from your fee receipt. Your account will be approved by school admin before you can login.
+              Register your account. The school admin will review your request and assign your Family ID to activate your login.
             </div>
             {regMsg && <div className="bg-red-50 border border-red-200 text-red-700 text-xs px-3 py-2 rounded-xl mb-3">{regMsg}</div>}
-            <div className="mb-3">
-              <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Family ID *</label>
-              <input value={reg.familyId} onChange={e => setReg({...reg, familyId: e.target.value})}
-                className={inputCls} placeholder="e.g. FAM-001" autoFocus/>
-            </div>
             <div className="mb-3">
               <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Your Full Name *</label>
               <input value={reg.name} onChange={e => setReg({...reg, name: e.target.value})}
@@ -546,14 +543,29 @@ function ParentPortal({ currentUser, onLogout }) {
   const curM      = NOW2.getMonth(), curY = NOW2.getFullYear();
 
   // ── Complaint form state ──
-  const [cForm, setCForm] = useState({ subject:'', message:'', type:'complaint' });
+  const [cForm, setCForm] = useState({ subject:'', message:'', type:'complaint', attachData: null, attachName: '', attachType: '' });
   const [cSent, setCSent] = useState(false);
+  const [cUploading, setCUploading] = useState(false);
+  const cFileRef = React.useRef();
+
+  const handleCFile = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setCUploading(true);
+    const reader = new FileReader();
+    reader.onload = ev => {
+      setCForm(f => ({ ...f, attachData: ev.target.result, attachName: file.name, attachType: file.type.startsWith('image') ? 'image' : 'pdf' }));
+      setCUploading(false);
+    };
+    reader.readAsDataURL(file);
+  };
 
   const submitComplaint = () => {
     if (!cForm.subject.trim() || !cForm.message.trim()) { alert('Please fill in subject and message.'); return; }
-    const entry = { id: uid(), parentId: currentUser.id, parentName: currentUser.name, familyId, subject: cForm.subject.trim(), message: cForm.message.trim(), type: cForm.type, submittedAt: new Date().toISOString(), status: 'open' };
+    const entry = { id: uid(), parentId: currentUser.id, parentName: currentUser.name, familyId, subject: cForm.subject.trim(), message: cForm.message.trim(), type: cForm.type, attachData: cForm.attachData || null, attachName: cForm.attachName || '', attachType: cForm.attachType || '', submittedAt: new Date().toISOString(), status: 'open' };
     S.set(K.COMP, [...comps, entry]);
-    setCForm({ subject:'', message:'', type:'complaint' });
+    setCForm({ subject:'', message:'', type:'complaint', attachData: null, attachName: '', attachType: '' });
+    if (cFileRef.current) cFileRef.current.value = '';
     setCSent(true);
     setTimeout(() => setCSent(false), 4000);
   };
@@ -749,10 +761,18 @@ function ParentPortal({ currentUser, onLogout }) {
                 <input value={cForm.subject} onChange={e => setCForm({...cForm, subject: e.target.value})}
                   className={inputCls} placeholder="Brief subject"/>
               </div>
-              <div className="mb-4">
+              <div className="mb-3">
                 <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Message *</label>
                 <textarea value={cForm.message} onChange={e => setCForm({...cForm, message: e.target.value})}
                   className={inputCls + ' resize-none'} rows="4" placeholder="Describe in detail..."/>
+              </div>
+              <div className="mb-4">
+                <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Attach Photo / File (optional)</label>
+                <input ref={cFileRef} type="file" accept="image/*,application/pdf" capture="environment"
+                  onChange={handleCFile}
+                  className="w-full text-sm text-gray-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-red-50 file:text-red-700 hover:file:bg-red-100"/>
+                {cUploading && <p className="text-xs text-blue-600 mt-1">⏳ Processing...</p>}
+                {cForm.attachData && <p className="text-xs text-green-600 mt-1">✓ {cForm.attachName} attached</p>}
               </div>
               <button onClick={submitComplaint}
                 className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded-xl text-sm transition-all">
@@ -891,6 +911,13 @@ function Notifications() {
               <p className="font-bold text-gray-800 text-sm">{c.subject}</p>
               <p className="text-xs text-gray-500 mt-0.5">{c.parentName} &nbsp;·&nbsp; Family {c.familyId} &nbsp;·&nbsp; {new Date(c.submittedAt).toLocaleDateString('en-PK',{day:'2-digit',month:'short',year:'numeric'})}</p>
               <p className="text-sm text-gray-700 mt-2 bg-gray-50 rounded-lg px-3 py-2">{c.message}</p>
+              {c.attachData && (
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="text-xs text-gray-500">{c.attachType === 'image' ? '🖼️' : '📄'} {c.attachName}</span>
+                  <button onClick={() => { const w = window.open('','_blank','width=800,height=700'); w.document.write(`<!DOCTYPE html><html><head><title>Attachment</title><style>body{margin:0;background:#111;display:flex;align-items:center;justify-content:center;min-height:100vh}img{max-width:100%;max-height:100vh}iframe{width:100%;height:100vh;border:none}</style></head><body>${c.attachType==='pdf'?`<iframe src="${c.attachData}"></iframe>`:`<img src="${c.attachData}"/>`}</body></html>`); w.document.close(); }}
+                    className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold px-2 py-0.5 rounded-lg transition-all">View Attachment</button>
+                </div>
+              )}
             </Card>
           ))}
         </div>
@@ -1313,7 +1340,16 @@ const blankStu = { name:'', father:'', cls:'1', roll:'', monthlyFee:'', annualFu
 // ── Called by popup to save students into this window ───────────────────────
 window.receiveStudents = function(newStudents) {
   const existing = S.get(K.STU, []);
-  S.set(K.STU, [...existing, ...newStudents]);
+  const updated = [...existing, ...newStudents];
+  S.set(K.STU, updated);
+  // Push to Firebase immediately so the background sync won't overwrite with stale data
+  try {
+    if (window._fbDB) {
+      window._fbDB.ref('sms').update({ sms_stu: updated });
+    }
+  } catch(e) {}
+  // Notify Students component to refresh state without a page reload
+  window.dispatchEvent(new CustomEvent('sms_stuRefresh', { detail: updated }));
 };
 
 // ── Sibling Registration — opens separate popup window ──────────────────────
@@ -1334,6 +1370,37 @@ function openSiblingWindow() {
     }).join('');
   }
 
+  function recalcDiscount() {
+    var mfeeVal = Number((win.document.getElementById('inp_mfee') || {}).value) || 0;
+    var rows = win.document.querySelectorAll('.sib-row');
+    var count = rows.length;
+    if (count === 0 || mfeeVal === 0) {
+      var prev = win.document.getElementById('fee_preview');
+      if (prev) prev.style.display = 'none';
+      return;
+    }
+    var totalClassFee = 0;
+    rows.forEach(function(row) {
+      var n = row.id.replace('row', '');
+      var cls = (win.document.getElementById('scls' + n) || {}).value || '1';
+      totalClassFee += Number(CFEES[cls] || 0);
+    });
+    var perStudent = Math.round(mfeeVal / count);
+    var discountTotal = Math.max(0, totalClassFee - mfeeVal);
+    // Auto-fill discount field
+    var sdEl = win.document.getElementById('inp_sd');
+    if (sdEl) sdEl.value = discountTotal > 0 ? discountTotal : '';
+    // Show preview
+    var preview = win.document.getElementById('fee_preview');
+    if (preview) {
+      var txt = 'Rs.\u00a0' + mfeeVal.toLocaleString() + '\u00a0\xF7\u00a0' + count + '\u00a0=\u00a0Rs.\u00a0' + perStudent.toLocaleString() + '\u00a0each';
+      if (discountTotal > 0) txt += '\u00a0\u2014\u00a0Discount:\u00a0Rs.\u00a0' + discountTotal.toLocaleString();
+      else if (totalClassFee > 0) txt += '\u00a0\u2014\u00a0(Class fee:\u00a0Rs.\u00a0' + (totalClassFee/count).toLocaleString() + '\u00a0each)';
+      preview.textContent = txt;
+      preview.style.display = 'block';
+    }
+  }
+
   function addRow() {
     rowCount++;
     var n = rowCount;
@@ -1344,7 +1411,7 @@ function openSiblingWindow() {
     div.id = 'row' + n;
     div.innerHTML =
       '<input id="sname' + n + '" placeholder="Student full name" style="width:100%;border:2px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:13px;outline:none"/>' +
-      '<select id="scls' + n + '" style="width:100%;border:2px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:13px;outline:none">' + clsOptions('1') + '</select>' +
+      '<select id="scls' + n + '" onchange="recalcDiscount()" style="width:100%;border:2px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:13px;outline:none">' + clsOptions('1') + '</select>' +
       '<input id="sroll' + n + '" placeholder="Roll No" style="width:100%;border:2px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:13px;outline:none"/>' +
       '<div style="text-align:center">' +
         '<img id="sphimg' + n + '" style="display:none;width:36px;height:36px;border-radius:50%;object-fit:cover;border:2px solid #3b82f6;margin-bottom:3px"/>' +
@@ -1352,11 +1419,13 @@ function openSiblingWindow() {
       '</div>' +
       '<button onclick="removeRow(' + n + ')" style="background:#ef4444;color:#fff;border:none;border-radius:8px;padding:6px 10px;font-size:13px;font-weight:700;cursor:pointer">✕</button>';
     container.appendChild(div);
+    recalcDiscount();
   }
 
   function removeRow(n) {
     var el = win.document.getElementById('row' + n);
     if (el) el.remove();
+    recalcDiscount();
   }
 
   function handlePhoto(n, input) {
@@ -1377,9 +1446,10 @@ function openSiblingWindow() {
     var familyId = win.document.getElementById('inp_familyId').value.trim();
     var contact  = win.document.getElementById('inp_contact').value.trim();
     var address  = win.document.getElementById('inp_address').value.trim();
-    var mFee     = win.document.getElementById('inp_mfee').value;
+    var mFeeTotal = Number(win.document.getElementById('inp_mfee').value) || 0;
     var afTotal  = Number(win.document.getElementById('inp_af').value) || 0;
     var sdTotal  = Number(win.document.getElementById('inp_sd').value) || 0;
+    var obTotal  = Number(win.document.getElementById('inp_ob').value) || 0;
     var msgEl    = win.document.getElementById('msg');
 
     if (!father) { msgEl.textContent = '❌ Father Name is required.'; msgEl.style.display = 'block'; return; }
@@ -1403,16 +1473,18 @@ function openSiblingWindow() {
       return;
     }
 
-    var count  = siblings.length;
-    var afEach = count > 0 ? Math.round(afTotal / count) : afTotal;
-    var sdEach = count > 0 ? Math.round(sdTotal / count) : sdTotal;
+    var count    = siblings.length;
+    var mFeeEach = count > 0 && mFeeTotal > 0 ? Math.round(mFeeTotal / count) : mFeeTotal;
+    var afEach   = count > 0 ? Math.round(afTotal / count) : afTotal;
+    var sdEach   = count > 0 ? Math.round(sdTotal / count) : sdTotal;
+    var obEach   = count > 0 && obTotal > 0 ? Math.round(obTotal / count) : obTotal;
 
     var newStudents = siblings.map(function(s) {
       return {
         id: uid(), name: s.name, father: father, cls: s.cls, roll: s.roll,
-        monthlyFee: mFee || '',
+        monthlyFee: mFeeEach > 0 ? String(mFeeEach) : '',
         annualFund: afEach > 0 ? String(afEach) : '',
-        openingBalance: '', contact: contact, address: address,
+        openingBalance: obEach > 0 ? String(obEach) : '', contact: contact, address: address,
         family: family || (father + ' Family'),
         familyId: familyId,
         siblingDiscount: sdEach > 0 ? String(sdEach) : '',
@@ -1420,35 +1492,39 @@ function openSiblingWindow() {
       };
     });
 
-    try {
-      if (window.opener && !window.opener.closed && window.opener.receiveStudents) {
-        window.opener.receiveStudents(newStudents);
-      } else {
-        var ex = JSON.parse(localStorage.getItem('sms_stu') || '[]');
-        localStorage.setItem('sms_stu', JSON.stringify(ex.concat(newStudents)));
-      }
-    } catch(e) {
-      var ex2 = JSON.parse(localStorage.getItem('sms_stu') || '[]');
-      localStorage.setItem('sms_stu', JSON.stringify(ex2.concat(newStudents)));
+    // win.opener = main window (win is the popup, opener is whoever opened it)
+    var mainWin = win.opener && !win.opener.closed ? win.opener : null;
+    var saved = false;
+    if (mainWin && typeof mainWin.receiveStudents === 'function') {
+      try { mainWin.receiveStudents(newStudents); saved = true; } catch(e) {}
+    }
+    if (!saved) {
+      // Fallback: write directly to localStorage and fire refresh event on main window
+      var ex = JSON.parse(localStorage.getItem('sms_stu') || '[]');
+      var merged = ex.concat(newStudents);
+      localStorage.setItem('sms_stu', JSON.stringify(merged));
+      try {
+        if (mainWin) mainWin.dispatchEvent(new mainWin.CustomEvent('sms_stuRefresh', { detail: merged }));
+      } catch(e) {}
     }
 
     win.document.body.innerHTML =
       '<div style="text-align:center;padding:80px 40px;font-family:Segoe UI,Arial,sans-serif;background:#f0fdf4;min-height:100vh">' +
       '<div style="font-size:72px;margin-bottom:20px">✅</div>' +
       '<h2 style="color:#059669;font-size:26px;font-weight:800;margin-bottom:12px">' + newStudents.length + ' Student(s) Saved!</h2>' +
-      '<p style="color:#9ca3af;font-size:13px;margin-bottom:30px">Main window is refreshing…</p>' +
+      '<p style="color:#6b7280;font-size:13px;margin-bottom:30px">Students added to the system successfully.</p>' +
       '<button onclick="window.close()" style="padding:12px 32px;background:#10b981;color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer">✕ Close</button>' +
       '</div>';
 
-    try { if (window.opener && !window.opener.closed) window.opener.location.reload(); } catch(e) {}
     setTimeout(function() { win.close(); }, 2000);
   }
 
   // expose functions to popup window
-  win.removeRow   = removeRow;
-  win.handlePhoto = handlePhoto;
-  win.saveAll     = saveAll;
-  win.addMoreRow  = addRow;
+  win.removeRow        = removeRow;
+  win.handlePhoto      = handlePhoto;
+  win.saveAll          = saveAll;
+  win.addMoreRow       = addRow;
+  win.recalcDiscount   = recalcDiscount;
 
   win.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Add New Student</title>' +
   '<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Segoe UI,Arial,sans-serif;background:#f1f5f9;padding:20px;color:#1a1a1a}' +
@@ -1470,6 +1546,10 @@ function openSiblingWindow() {
   '</style></head><body>' +
   '<div class="hdr"><h1>🎓 Add New Student</h1><p>Single student or full siblings — common info entered once</p></div>' +
   '<div id="msg"></div>' +
+  '<div class="card"><h2>👦👧 Students — Add Each Child</h2>' +
+  '<div class="sh"><span>Full Name *</span><span>Class *</span><span>Roll No *</span><span>Photo</span><span></span></div>' +
+  '<div id="sibRows"></div>' +
+  '<button class="btn-add" onclick="addMoreRow()">+ Add Another Student</button></div>' +
   '<div class="card"><h2>👨 Common Family Details</h2>' +
   '<div class="g2"><div><span class="fl">Father\'s Name *</span><input class="fi" id="inp_father" placeholder="Father\'s full name"/></div>' +
   '<div><span class="fl">Family Name</span><input class="fi" id="inp_family" placeholder="e.g. Khan Family"/></div></div>' +
@@ -1477,14 +1557,14 @@ function openSiblingWindow() {
   '<div><span class="fl">Contact</span><input class="fi" id="inp_contact" placeholder="0321-1234567"/></div>' +
   '<div><span class="fl">Address</span><input class="fi" id="inp_address" placeholder="Home address"/></div></div></div>' +
   '<div class="card"><h2>💰 Fee & Financial Details</h2><div class="g3">' +
-  '<div><span class="fl">Monthly Fee (Rs.)</span><input class="fi" type="number" min="0" id="inp_mfee" placeholder="0 = full class fee"/></div>' +
+  '<div><span class="fl">Total Monthly Fee — All Siblings (Rs.)</span><input class="fi" type="number" min="0" id="inp_mfee" placeholder="e.g. 1800 for 2 siblings" oninput="recalcDiscount()"/></div>' +
   '<div><span class="fl">Annual Fund Rs. (total all siblings)</span><input class="fi" type="number" min="0" id="inp_af" placeholder="e.g. 5000"/></div>' +
-  '<div><span class="fl">Sibling Discount Rs. (total)</span><input class="fi" type="number" min="0" id="inp_sd" placeholder="e.g. 4000"/></div>' +
-  '</div></div>' +
-  '<div class="card"><h2>👦👧 Students — Add Each Child</h2>' +
-  '<div class="sh"><span>Full Name *</span><span>Class *</span><span>Roll No *</span><span>Photo</span><span></span></div>' +
-  '<div id="sibRows"></div>' +
-  '<button class="btn-add" onclick="addMoreRow()">+ Add Another Student</button></div>' +
+  '<div><span class="fl">Sibling Discount Rs. (auto-calculated)</span><input class="fi" type="number" min="0" id="inp_sd" placeholder="Auto-filled"/></div>' +
+  '</div>' +
+  '<div id="fee_preview" style="display:none;margin-top:8px;padding:8px 12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;font-size:12px;font-weight:600;color:#065f46"></div>' +
+  '<div style="margin-top:10px"><span class="fl" style="color:#c2410c">Opening Balance (Rs.) — Previous Dues (Total All Siblings)</span>' +
+  '<input class="fi" type="number" min="0" id="inp_ob" placeholder="0 if no prior balance" style="border-color:#fed7aa"/></div>' +
+  '</div>' +
   '<button class="btn-save" onclick="saveAll()">✅ Save & Add to System</button>' +
   '<p style="text-align:center;font-size:11px;color:#9ca3af;margin-top:10px">Window closes automatically after saving.</p>' +
   '</body></html>');
@@ -1558,6 +1638,13 @@ function Students() {
   const [delId, setDelId]   = useState(null);
   const [search, setSearch] = useState('');
   const [fcls, setFcls]     = useState('All');
+
+  // Refresh list when popup saves new students (without page reload)
+  React.useEffect(() => {
+    const handler = (e) => setList(e.detail || S.get(K.STU, []));
+    window.addEventListener('sms_stuRefresh', handler);
+    return () => window.removeEventListener('sms_stuRefresh', handler);
+  }, []);
 
   const persist = (data) => { S.set(K.STU, data); setList(data); };
 
@@ -3881,7 +3968,17 @@ function FamilyLedger() {
   const [bpf, setBpf] = useState({ amount: '', paymentMethod: 'Cash', note: '' });
   const years = Array.from({ length: 5 }, (_, i) => NOW.getFullYear() - 2 + i);
 
-  const families = useMemo(() => [...new Set(allStudents.map(s => s.family).filter(Boolean))].sort(), [allStudents]);
+  const families = useMemo(() => {
+    const unique = [...new Set(allStudents.map(s => s.family).filter(Boolean))];
+    return unique.sort((a, b) => {
+      const aFid = allStudents.find(s => s.family === a && s.familyId)?.familyId || '';
+      const bFid = allStudents.find(s => s.family === b && s.familyId)?.familyId || '';
+      const aNum = parseInt(aFid, 10);
+      const bNum = parseInt(bFid, 10);
+      if (!isNaN(aNum) && !isNaN(bNum)) return aNum - bNum;
+      return aFid.localeCompare(bFid) || a.localeCompare(b);
+    });
+  }, [allStudents]);
 
   // Search: find matching family by Family ID, Student Name, or Father Name
   const filteredFamilies = useMemo(() => {
@@ -3953,10 +4050,15 @@ function FamilyLedger() {
     return 'unpaid';
   }, [familyStudents, monthPaidMap, classFees]);
 
-  const totalDue       = familyStudents.reduce((s, st) => s + Number(classFees[st.cls] || 0), 0);
-  const totalPaidMonth = familyStudents.reduce((s, st) => s + (monthPaidMap[st.id] || 0), 0);
-  const totalBalance   = Math.max(0, totalDue - totalPaidMonth);
-  const allTimePaid    = familyPayments.reduce((s, p) => s + Number(p.amount || 0), 0);
+  const totalDue            = familyStudents.reduce((s, st) => s + Number(classFees[st.cls] || 0), 0);
+  const totalPaidMonth      = familyStudents.reduce((s, st) => s + (monthPaidMap[st.id] || 0), 0);
+  const totalBalance        = Math.max(0, totalDue - totalPaidMonth);
+  const allTimePaid         = familyPayments.reduce((s, p) => s + Number(p.amount || 0), 0);
+  const totalOpeningBalance = familyStudents.reduce((s, st) => s + Number(st.openingBalance || 0), 0);
+  // Per-student: auto discount = classFee − stu.monthlyFee (if monthlyFee < classFee)
+  const getStuAutoDisc = (st) => { const cf = Number(classFees[st.cls]||0); const sr = Number(st.monthlyFee||0); return sr > 0 && sr < cf ? cf - sr : 0; };
+  const totalDiscount       = familyStudents.reduce((s, st) => s + getStuAutoDisc(st), 0);
+  const totalActualMonthlyDue = familyStudents.reduce((s, st) => s + Math.max(0, Number(classFees[st.cls]||0) - getStuAutoDisc(st)), 0);
   // Annual Fund totals
   const totalAFDue     = familyStudents.reduce((s, st) => s + Number(st.annualFund || 0), 0);
   const totalAFPaid    = familyStudents.reduce((s, st) => s + (monthAFPaidMap[st.id] || 0), 0);
@@ -4156,7 +4258,8 @@ function FamilyLedger() {
   const totalBooksPaid = familyStudents.reduce((s, st) => s + (booksPaidMap[st.id] || 0), 0);
   const grandTotalDue  = totalDue + totalAFDue + totalBooksDue;
   const grandTotalPaid = totalPaidMonth + totalAFPaid + totalBooksPaid;
-  const grandBalance   = Math.max(0, grandTotalDue - grandTotalPaid);
+  const netOutstanding = Math.max(0, totalOpeningBalance + totalActualMonthlyDue - allTimePaid);
+  const grandBalance   = netOutstanding;
   const openBookEdit = (stu) => setBookMod({ stu, books: getBooksForStu(stu).map(b => ({...b})) });
   const saveBooks = () => { persistBooks({ ...bookLists, [bookMod.stu.id]: bookMod.books }); setBookMod(null); };
   const updateBook = (idx, field, val) => setBookMod({ ...bookMod, books: bookMod.books.map((b, i) => i === idx ? {...b, [field]: field==='name'?val:Number(val)} : b) });
@@ -4318,32 +4421,75 @@ function FamilyLedger() {
                   </div>
 
                   {/* Family summary cards */}
-                  <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-5">
+                  <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
                     <Card className="p-4 border-purple-100">
                       <p className="text-xs text-gray-400 font-semibold uppercase mb-1">Children</p>
                       <p className="text-2xl font-bold text-purple-700">{familyStudents.length}</p>
                     </Card>
+                    <Card className="p-4 border-orange-100">
+                      <p className="text-xs text-gray-400 font-semibold uppercase mb-1">Opening Balance</p>
+                      <p className="text-lg font-bold text-orange-600">Rs. {totalOpeningBalance.toLocaleString()}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">prev. dues carried</p>
+                    </Card>
                     <Card className="p-4 border-blue-100">
-                      <p className="text-xs text-gray-400 font-semibold uppercase mb-1">Total Due</p>
-                      <p className="text-lg font-bold text-blue-700">Rs. {grandTotalDue.toLocaleString()}</p>
-                      {totalBooksDue > 0 && <p className="text-xs text-gray-400 mt-0.5">incl. books Rs. {totalBooksDue.toLocaleString()}</p>}
+                      <p className="text-xs text-gray-400 font-semibold uppercase mb-1">Monthly Due</p>
+                      <p className="text-lg font-bold text-blue-700">Rs. {totalActualMonthlyDue.toLocaleString()}</p>
+                      {totalDiscount > 0 && <p className="text-xs text-emerald-600 mt-0.5">−Rs. {totalDiscount.toLocaleString()} discount</p>}
                     </Card>
                     <Card className="p-4 border-emerald-100">
-                      <p className="text-xs text-gray-400 font-semibold uppercase mb-1">Total Paid</p>
-                      <p className="text-lg font-bold text-emerald-700">Rs. {totalPaidMonth.toLocaleString()}</p>
+                      <p className="text-xs text-gray-400 font-semibold uppercase mb-1">All-Time Paid</p>
+                      <p className="text-lg font-bold text-emerald-700">Rs. {allTimePaid.toLocaleString()}</p>
                     </Card>
-                    <Card className={`p-4 ${grandBalance>0?'border-red-100':'border-emerald-100'}`}>
-                      <p className="text-xs text-gray-400 font-semibold uppercase mb-1">Balance</p>
-                      <p className={`text-lg font-bold ${grandBalance>0?'text-red-600':'text-emerald-600'}`}>{grandBalance>0?`Rs. ${grandBalance.toLocaleString()}`:'Cleared'}</p>
+                    <Card className={`p-4 ${netOutstanding>0?'border-red-200 bg-red-50':'border-emerald-100'}`}>
+                      <p className="text-xs text-gray-400 font-semibold uppercase mb-1">Net Outstanding</p>
+                      <p className={`text-xl font-extrabold ${netOutstanding>0?'text-red-600':'text-emerald-600'}`}>{netOutstanding>0?`Rs. ${netOutstanding.toLocaleString()}`:'✓ Cleared'}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">opening + monthly − paid</p>
                     </Card>
-                    <Card className="p-4 border-gray-100">
-                      <p className="text-xs text-gray-400 font-semibold uppercase mb-1">Family Status</p>
-                      <p className="text-sm font-bold mt-1">
-                        {familyStatus==='paid' && <Badge color="green">✓ Fully Paid</Badge>}
-                        {familyStatus==='partial' && <Badge color="orange">⏳ Partial</Badge>}
-                        {familyStatus==='unpaid' && <Badge color="red">✗ Unpaid</Badge>}
-                      </p>
-                    </Card>
+                  </div>
+
+                  {/* Combined Family Calculation Box */}
+                  <div className="bg-gradient-to-r from-purple-50 to-blue-50 border-2 border-purple-200 rounded-2xl p-4 mb-5">
+                    <h4 className="font-bold text-purple-800 text-sm mb-3">🧮 Combined Family Outstanding — All Siblings</h4>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+                      <div className="bg-white rounded-xl p-3 border border-orange-100">
+                        <div className="text-xs text-gray-500 uppercase font-semibold mb-1">Opening Balance</div>
+                        <div className="text-lg font-bold text-orange-600">Rs. {totalOpeningBalance.toLocaleString()}</div>
+                      </div>
+                      <div className="bg-white rounded-xl p-3 border border-blue-100">
+                        <div className="text-xs text-gray-500 uppercase font-semibold mb-1">+ Monthly Fee</div>
+                        <div className="text-lg font-bold text-blue-700">Rs. {totalActualMonthlyDue.toLocaleString()}</div>
+                        {totalDiscount > 0 && <div className="text-xs text-emerald-600 mt-0.5">after −Rs. {totalDiscount.toLocaleString()} disc</div>}
+                      </div>
+                      <div className="bg-white rounded-xl p-3 border border-emerald-100">
+                        <div className="text-xs text-gray-500 uppercase font-semibold mb-1">− Total Paid</div>
+                        <div className="text-lg font-bold text-emerald-700">Rs. {allTimePaid.toLocaleString()}</div>
+                      </div>
+                      <div className={`rounded-xl p-3 border-2 ${netOutstanding>0?'bg-red-50 border-red-300':'bg-emerald-50 border-emerald-300'}`}>
+                        <div className="text-xs text-gray-500 uppercase font-semibold mb-1">= Net Due</div>
+                        <div className={`text-xl font-extrabold ${netOutstanding>0?'text-red-700':'text-emerald-700'}`}>{netOutstanding>0?`Rs. ${netOutstanding.toLocaleString()}`:'✓ Cleared'}</div>
+                      </div>
+                    </div>
+                    {familyStudents.length > 1 && (
+                      <div className="mt-3 pt-3 border-t border-purple-100 flex flex-wrap gap-3">
+                        {familyStudents.map(st => {
+                          const stDisc = getStuAutoDisc(st);
+                          const stOB   = Number(st.openingBalance||0);
+                          const stNetDue = Math.max(0, Number(classFees[st.cls]||0) - stDisc) + stOB;
+                          const stPaid = familyPayments.filter(p => p.stuId===st.id).reduce((s,p)=>s+Number(p.amount||0),0);
+                          const stBal  = Math.max(0, stNetDue - stPaid);
+                          return (
+                            <div key={st.id} className="flex items-center gap-2 bg-white rounded-lg px-3 py-1.5 border border-gray-100 text-xs">
+                              <span className="font-semibold text-gray-700">{st.name}</span>
+                              <span className="text-gray-400">|</span>
+                              {stOB > 0 && <span className="text-orange-500">OB: Rs. {stOB.toLocaleString()}</span>}
+                              <span className="text-blue-600">Fee: Rs. {Math.max(0,Number(classFees[st.cls]||0)-stDisc).toLocaleString()}{stDisc>0&&<span className="text-emerald-500"> (−{stDisc})</span>}</span>
+                              <span className="text-emerald-600">Paid: Rs. {stPaid.toLocaleString()}</span>
+                              <span className={`font-bold ${stBal>0?'text-red-600':'text-emerald-600'}`}>{stBal>0?`Due: Rs. ${stBal.toLocaleString()}`:'✓'}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
 
                   {/* Per-child status table */}
@@ -4357,6 +4503,7 @@ function FamilyLedger() {
                           <tr className="text-left text-xs text-gray-500 font-semibold uppercase">
                             <th className="px-4 py-3">Student</th>
                             <th className="px-4 py-3">Class</th>
+                            <th className="px-4 py-3 text-right text-orange-600">Opening Bal</th>
                             <th className="px-4 py-3 text-right">Fee Due</th>
                             <th className="px-4 py-3 text-right text-purple-600">Ann. Fund</th>
                             <th className="px-4 py-3 text-right text-amber-600">Books Due</th>
@@ -4376,13 +4523,18 @@ function FamilyLedger() {
                             const afPaid   = monthAFPaidMap[stu.id] || 0;
                             const bkTotal  = getBookTotal(stu);
                             const bkPaid2  = booksPaidMap[stu.id] || 0;
-                            const bal      = due - paid;
+                            const autoDisc = getStuAutoDisc(stu);
+                            const obStu    = Number(stu.openingBalance || 0);
+                            const stuNetDue = Math.max(0, due - autoDisc) + obStu;
+                            const stuAllPaid = familyPayments.filter(p => p.stuId === stu.id).reduce((s, p) => s + Number(p.amount||0), 0);
+                            const bal      = stuNetDue - stuAllPaid;
                             const status   = getChildStatus(stu);
                             const stuMonthPays = familyPayments.filter(p => p.stuId===stu.id && p.month===vm && p.year===vy);
                             return (
                               <tr key={stu.id} className="hover:bg-slate-50">
                                 <td className="px-4 py-3 font-semibold text-gray-800">{stu.name}</td>
                                 <td className="px-4 py-3"><Badge color="blue">{stu.cls}</Badge></td>
+                                <td className="px-4 py-3 text-right font-semibold text-orange-600">{Number(stu.openingBalance||0)>0?`Rs. ${Number(stu.openingBalance).toLocaleString()}`:<span className="text-gray-300">—</span>}</td>
                                 <td className="px-4 py-3 text-right text-gray-600">Rs. {due.toLocaleString()}</td>
                                 <td className="px-4 py-3 text-right text-purple-600 font-semibold">{afDue > 0 ? `Rs. ${afDue.toLocaleString()}` : <span className="text-gray-300">—</span>}</td>
                                 <td className="px-4 py-3 text-right text-amber-600 font-semibold">
@@ -4418,20 +4570,22 @@ function FamilyLedger() {
                         <tfoot className="border-t-2 border-purple-200">
                           <tr className="bg-purple-50">
                             <td colSpan="2" className="px-4 py-2.5 font-bold text-purple-800 text-sm">Fee Subtotal</td>
+                            <td className="px-4 py-2.5 text-right font-bold text-orange-600">Rs. {totalOpeningBalance.toLocaleString()}</td>
                             <td className="px-4 py-2.5 text-right font-bold text-blue-700">Rs. {totalDue.toLocaleString()}</td>
                             <td className="px-4 py-2.5 text-right font-semibold text-purple-600">Rs. {totalAFDue.toLocaleString()}</td>
                             <td className="px-4 py-2.5 text-right font-semibold text-amber-600">{totalBooksDue > 0 ? `Rs. ${totalBooksDue.toLocaleString()}` : '—'}</td>
                             <td className="px-4 py-2.5 text-right font-semibold text-amber-700">{totalBooksPaid > 0 ? `Rs. ${totalBooksPaid.toLocaleString()}` : '—'}</td>
-                            <td className="px-4 py-2.5 text-right font-bold text-emerald-700">Rs. {totalPaidMonth.toLocaleString()}</td>
+                            <td className="px-4 py-2.5 text-right font-bold text-emerald-700">Rs. {allTimePaid.toLocaleString()}</td>
                             <td className="px-4 py-2.5 text-right font-semibold text-purple-700">Rs. {totalAFPaid.toLocaleString()}</td>
-                            <td className="px-4 py-2.5 text-right font-bold text-red-600">{totalBalance>0?`Rs. ${totalBalance.toLocaleString()}`:'—'}</td>
+                            <td className="px-4 py-2.5 text-right font-bold text-red-600">{netOutstanding>0?`Rs. ${netOutstanding.toLocaleString()}`:'—'}</td>
                             <td colSpan="2"></td>
                           </tr>
                           <tr className="bg-purple-100 border-t border-purple-200">
-                            <td colSpan="2" className="px-4 py-3 font-extrabold text-purple-900 text-sm">🧾 Grand Total</td>
-                            <td colSpan="4" className="px-4 py-3 text-right font-extrabold text-blue-800">Due: Rs. {grandTotalDue.toLocaleString()}</td>
-                            <td colSpan="2" className="px-4 py-3 text-right font-extrabold text-emerald-800">Paid: Rs. {grandTotalPaid.toLocaleString()}</td>
-                            <td className="px-4 py-3 text-right font-extrabold text-red-700">{grandBalance>0?`Rs. ${grandBalance.toLocaleString()} Due`:'✓ Cleared'}</td>
+                            <td colSpan="2" className="px-4 py-3 font-extrabold text-purple-900 text-sm">🧾 Net Outstanding</td>
+                            <td colSpan="2" className="px-4 py-3 text-right font-extrabold text-orange-700">Opening: Rs. {totalOpeningBalance.toLocaleString()}</td>
+                            <td colSpan="3" className="px-4 py-3 text-right font-extrabold text-blue-800">+ Monthly: Rs. {totalActualMonthlyDue.toLocaleString()}</td>
+                            <td colSpan="2" className="px-4 py-3 text-right font-extrabold text-emerald-800">− Paid: Rs. {allTimePaid.toLocaleString()}</td>
+                            <td className="px-4 py-3 text-right font-extrabold text-red-700">{netOutstanding>0?`Rs. ${netOutstanding.toLocaleString()} Due`:'✓ Cleared'}</td>
                             <td colSpan="2"></td>
                           </tr>
                         </tfoot>
@@ -5130,7 +5284,8 @@ function UserAdmin({ onPasswordChange }) {
   const [delId, setDelId]       = useState(null);
   const [pwMod, setPwMod]       = useState(null);
   const [pwForm, setPwForm]     = useState({ cur:'', newp:'', conf:'' });
-  const [adminReset, setAdminReset] = useState(null); // { user, newp }
+  const [adminReset, setAdminReset] = useState(null);
+  const [approveModal, setApproveModal] = useState(null); // { req, familyId }
   const [tab, setTab]           = useState('users');
   const [preqs, setPreqs]       = useState(() => S.get(K.PREQ, []));
   const [viewPw, setViewPw]     = useState({});
@@ -5161,7 +5316,7 @@ function UserAdmin({ onPasswordChange }) {
     if (pwForm.newp !== pwForm.conf) return alert('Passwords do not match.');
     const updated = users.map(u => u.id === selfId ? { ...u, password: pwForm.newp } : u);
     persist(updated);
-    S.set(K.SESS, { ...self, password: pwForm.newp });
+    setSession({ ...self, password: pwForm.newp });
     setPwMod(null); setPwForm({ cur:'', newp:'', conf:'' });
     alert('Password changed successfully.');
   };
@@ -5173,14 +5328,16 @@ function UserAdmin({ onPasswordChange }) {
     alert(`Password for ${adminReset.user.name} reset successfully.`);
   };
 
-  const approveParent = (reqId) => {
-    const req = preqs.find(r => r.id === reqId);
-    if (!req) return;
-    const updated = users.map(u => u.id === req.id ? { ...u, status: 'active' } : u);
+  const approveParent = () => {
+    if (!approveModal) return;
+    const { req, familyId } = approveModal;
+    if (!familyId.trim()) { alert('Please enter the Family ID / Sibling Number before approving.'); return; }
+    const updated = users.map(u => u.id === req.id ? { ...u, status: 'active', familyId: familyId.trim() } : u);
     persist(updated);
-    const updPreqs = preqs.filter(r => r.id !== reqId);
+    const updPreqs = preqs.filter(r => r.id !== req.id);
     S.set(K.PREQ, updPreqs); setPreqs(updPreqs);
-    alert(`${req.name} approved. They can now login.`);
+    setApproveModal(null);
+    alert(`✓ ${req.name} approved!\nFamily ID "${familyId.trim()}" assigned.\nThey can now login.`);
   };
 
   const rejectParent = (reqId) => {
@@ -5236,9 +5393,10 @@ function UserAdmin({ onPasswordChange }) {
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {users.map(u => (
-                  <tr key={u.id} className="hover:bg-slate-50">
+                  <tr key={u.id} className={`hover:bg-slate-50 ${u.disabled ? 'opacity-60' : ''}`}>
                     <td className="px-4 py-3 font-semibold text-gray-800">
                       {u.name}
+                      {u.disabled && <span className="ml-2 text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full font-semibold">Disabled</span>}
                       {u.status === 'pending' && <span className="ml-2 text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-semibold">Pending</span>}
                       {u.status === 'rejected' && <span className="ml-2 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-semibold">Rejected</span>}
                       {u.familyId && <span className="ml-2 text-xs text-gray-400">({u.familyId})</span>}
@@ -5257,6 +5415,14 @@ function UserAdmin({ onPasswordChange }) {
                       <td className="px-4 py-3 text-right space-x-1">
                         <Btn sm variant="outline" onClick={() => window.requireMasterCode(() => setAdminReset({ user: u, newp: '' }), `Reset password: ${u.name}`)}>Reset PW</Btn>
                         <Btn sm variant="outline" onClick={() => window.requireMasterCode(() => setForm({ ...u, password:'' }), `Edit user: ${u.name}`)}>Edit</Btn>
+                        {u.role !== 'admin' && (
+                          <Btn sm variant={u.disabled ? 'outline' : 'red'} onClick={() => window.requireMasterCode(() => {
+                            const upd = users.map(x => x.id === u.id ? { ...x, disabled: !x.disabled } : x);
+                            persist(upd);
+                          }, `${u.disabled ? 'Enable' : 'Disable'} account: ${u.name}`)}>
+                            {u.disabled ? '▶ Enable' : '⏸ Disable'}
+                          </Btn>
+                        )}
                         {u.role !== 'admin' && u.role !== 'principal' && <Btn sm variant="red" onClick={() => window.requireMasterCode(() => setDelId(u.id), `Delete user: ${u.name}`)}>Del</Btn>}
                       </td>
                     )}
@@ -5276,14 +5442,14 @@ function UserAdmin({ onPasswordChange }) {
           )}
           {preqs.filter(r => users.find(u => u.id===r.id && u.status==='pending')).map(r => (
             <Card key={r.id} className="p-4">
-              <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start justify-between gap-3 flex-wrap">
                 <div>
                   <p className="font-bold text-gray-800">{r.name}</p>
-                  <p className="text-xs text-gray-500 mt-0.5">Username: <strong>{r.username}</strong> &nbsp;·&nbsp; Family ID: <strong>{r.familyId}</strong></p>
+                  <p className="text-xs text-gray-500 mt-0.5">Username: <strong>{r.username}</strong></p>
                   <p className="text-xs text-gray-400 mt-0.5">Requested: {new Date(r.requestedAt).toLocaleDateString('en-PK',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</p>
                 </div>
                 <div className="flex gap-2 shrink-0">
-                  <Btn sm variant="outline" onClick={() => approveParent(r.id)}>✓ Approve</Btn>
+                  <Btn sm onClick={() => setApproveModal({ req: r, familyId: '' })}>✓ Approve & Assign ID</Btn>
                   <Btn sm variant="red" onClick={() => rejectParent(r.id)}>✗ Reject</Btn>
                 </div>
               </div>
@@ -5325,6 +5491,25 @@ function UserAdmin({ onPasswordChange }) {
           <div className="flex gap-2 mt-5">
             <Btn full variant="green" onClick={changePw}>Change Password</Btn>
             <Btn variant="outline" onClick={() => setPwMod(null)}>Cancel</Btn>
+          </div>
+        </Modal>
+      )}
+
+      {approveModal && (
+        <Modal title="Approve Parent Account" onClose={() => setApproveModal(null)}>
+          <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 mb-4">
+            <p className="text-sm font-bold text-gray-800">{approveModal.req.name}</p>
+            <p className="text-xs text-gray-500 mt-0.5">Username: <strong>{approveModal.req.username}</strong></p>
+          </div>
+          <Inp label="Family ID / Sibling Number *"
+            value={approveModal.familyId}
+            onChange={e => setApproveModal({...approveModal, familyId: e.target.value})}
+            placeholder="e.g. F-001 or FAM-2025-01"
+          />
+          <p className="text-xs text-gray-400 mb-4">This ID links the parent to their children's records. Use the same Family ID set on the student profiles.</p>
+          <div className="flex gap-2">
+            <Btn full onClick={approveParent}>✓ Approve & Activate Login</Btn>
+            <Btn variant="outline" onClick={() => setApproveModal(null)}>Cancel</Btn>
           </div>
         </Modal>
       )}
@@ -7752,23 +7937,24 @@ function SecuritySettings() {
 }
 
 const NAV_ALL = [
-  { id:'dashboard',   label:'Dashboard',       icon:'🏠',  roles:['admin','staff','principal'] },
-  { id:'students',    label:'Students',        icon:'👨‍🎓', roles:['admin','staff','principal'] },
-  { id:'feecollect',  label:'Fee Collection',  icon:'💰',  roles:['admin','staff','principal'] },
-  { id:'fees',        label:'Student Ledger',  icon:'📒',  roles:['admin','staff','principal'] },
-  { id:'inventory',   label:'Inventory',       icon:'📦',  roles:['admin','staff','principal'] },
-  { id:'expenses',    label:'Expenses',        icon:'🧾',  roles:['admin','staff','principal'] },
-  { id:'family',      label:'Family Ledger',   icon:'👨‍👩‍👧‍👦', roles:['admin','staff','principal'] },
-  { id:'staff',       label:'Staff & Salary',  icon:'👩‍🏫', roles:['admin','staff','principal'] },
-  { id:'books',       label:'Books & Vendors', icon:'📚',  roles:['admin','staff','principal'] },
-  { id:'exams',       label:'Exams',           icon:'📝',  roles:['admin','staff','principal'] },
-  { id:'cashbook',    label:'Cash Book',       icon:'💼',  roles:['admin','principal'] },
-  { id:'users',       label:'User Management', icon:'🔐',  roles:['admin'] },
-  { id:'security',    label:'Security',        icon:'🛡️',  roles:['admin'] },
+  { id:'dashboard',   label:'Dashboard',           icon:'🏠',  roles:['admin','staff','principal'] },
+  { id:'students',    label:'Students',            icon:'👨‍🎓', roles:['admin','staff','principal'] },
+  { id:'feecollect',  label:'Fee Collection',      icon:'💰',  roles:['admin','staff','principal'] },
+  { id:'fees',        label:'Student Ledger',      icon:'📒',  roles:['admin','staff','principal'] },
+  { id:'inventory',   label:'Inventory',           icon:'📦',  roles:['admin','staff','principal'] },
+  { id:'expenses',    label:'Expenses',            icon:'🧾',  roles:['admin','staff','principal'] },
+  { id:'family',      label:'Family Ledger',       icon:'👨‍👩‍👧‍👦', roles:['admin','staff','principal'] },
+  { id:'staff',       label:'Staff & Salary',      icon:'👩‍🏫', roles:['admin','staff','principal'] },
+  { id:'books',       label:'Books & Vendors',     icon:'📚',  roles:['admin','staff','principal'] },
+  { id:'exams',       label:'Exams',               icon:'📝',  roles:['admin','staff','principal'] },
+  { id:'cashbook',    label:'Cash Book',           icon:'💼',  roles:['admin','principal'] },
+  { id:'notifications', label:'Notifications',     icon:'📢',  roles:['admin','principal','teacher'] },
+  { id:'users',       label:'User Management',     icon:'🔐',  roles:['admin'] },
+  { id:'security',    label:'Security',            icon:'🛡️',  roles:['admin'] },
 ];
 
 function App() {
-  const [currentUser, setCurrentUser] = useState(() => S.get(K.SESS, null));
+  const [currentUser, setCurrentUser] = useState(() => getSession());
   const [page, setPage]     = useState('dashboard');
   const [sideOpen, setSideOpen] = useState(false);
   const [staffCanModify, setStaffCanModify] = useState(() => S.get(K.PERM, {}).staffCanModify || false);
@@ -7798,10 +7984,15 @@ function App() {
 
   if (!currentUser) return <LoginScreen onLogin={setCurrentUser}/>;
 
+  // Parent role → dedicated portal (no sidebar)
+  if (currentUser.role === 'parent') {
+    return <ParentPortal currentUser={currentUser} onLogout={() => { clearSession(); setCurrentUser(null); }}/>;
+  }
+
   const NAV = NAV_ALL.filter(n => n.roles.includes(currentUser.role));
   const go  = (p) => { setPage(p); setSideOpen(false); };
 
-  const logout = () => { S.set(K.SESS, null); setCurrentUser(null); setPage('dashboard'); };
+  const logout = () => { clearSession(); setCurrentUser(null); setPage('dashboard'); };
 
   return (
     <UserContext.Provider value={currentUser}>
@@ -7925,9 +8116,10 @@ function App() {
           {page === 'staff'      && <Staff/>}
           {page === 'books'      && <VendorBooks/>}
           {page === 'exams'      && <Exams/>}
-          {page === 'cashbook'   && <CashBook/>}
-          {page === 'users'      && <UserAdmin/>}
-          {page === 'security'   && <SecuritySettings/>}
+          {page === 'cashbook'      && <CashBook/>}
+          {page === 'notifications' && <Notifications/>}
+          {page === 'users'         && <UserAdmin/>}
+          {page === 'security'      && <SecuritySettings/>}
         </main>
       </div>
     </div>
@@ -7938,6 +8130,8 @@ function App() {
 
 (function() {
   // STEP 1: Render app immediately from localStorage — never block on Firebase
+  // Remove any old session that was saved in localStorage by the previous version
+  localStorage.removeItem('sms_sess');
   const loading = document.getElementById('fb-loading');
   if (loading) loading.remove();
   ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
