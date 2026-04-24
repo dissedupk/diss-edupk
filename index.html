@@ -990,15 +990,23 @@ function Dashboard({ setPage }) {
   const bookLists = S.get(K.BL, {});
   const getStudentBookTotal = (stu) => (bookLists[stu.id] || []).reduce((s, b) => s + Number(b.price||0)*Number(b.qty||0), 0);
 
-  const outstandingFee = students.reduce((s, st) => s + Math.max(0, Number(classFees[st.cls]||0) - (paidAmountMap[st.id]||0)), 0);
+  const dashStuDisc = (st) => { const cf=Number(classFees[st.cls]||0); const sr=Number(st.monthlyFee||0); return sr>0&&sr<cf?cf-sr:0; };
+  const outstandingFee = students.reduce((s, st) => {
+    const cf = Number(classFees[st.cls]||0);
+    const ob = Number(st.openingBalance||0);
+    const disc = dashStuDisc(st);
+    return s + Math.max(0, cf - disc + ob - (paidAmountMap[st.id]||0));
+  }, 0);
   const outstandingAF  = students.reduce((s, st) => s + Math.max(0, Number(st.annualFund||0) - (paidAFMap[st.id]||0)), 0);
   const outstandingBks = students.reduce((s, st) => s + Math.max(0, getStudentBookTotal(st) - (paidBooksMap[st.id]||0)), 0);
   const totalDue = outstandingFee + outstandingAF + outstandingBks;
 
   const outstandingCount = students.filter(st => {
-    const due  = Number(classFees[st.cls] || 0);
+    const cf   = Number(classFees[st.cls] || 0);
+    const ob   = Number(st.openingBalance || 0);
+    const disc = dashStuDisc(st);
     const paid = paidAmountMap[st.id] || 0;
-    return due > paid;
+    return Math.max(0, cf - disc + ob - paid) > 0;
   }).length;
 
   // Month-wise books collection
@@ -1011,6 +1019,7 @@ function Dashboard({ setPage }) {
   const totalAnnualFund  = students.reduce((s, st) => s + Number(st.annualFund || 0), 0);
   const totalBooksValue  = students.reduce((s, st) => s + getStudentBookTotal(st), 0);
   const totalDemand      = totalMonthlyFee + totalAnnualFund + totalBooksValue;
+  const totalOpeningBalAll = students.reduce((s, st) => s + Number(st.openingBalance||0), 0);
 
   // ── Vendor Payable: Total supplied − Total paid (all vendors) ──
   const vendorBooks    = S.get(K.SBOOK, []);
@@ -1043,6 +1052,7 @@ function Dashboard({ setPage }) {
     { label: 'Annual Fund',      value: `Rs. ${annualFundTotal.toLocaleString()}`, subValue: annualFundExpected > 0 ? `of Rs. ${annualFundExpected.toLocaleString()}` : null, icon: '🏦', color: 'purple', pg: 'fees' },
     { label: 'Low Stock Items',  value: lowStock.length,                        icon: '📦', color: 'yellow', pg: 'inventory'  },
     { label: 'Outstanding Dues', value: `Rs. ${totalDue.toLocaleString()}`,     subValue: `${outstandingCount} student${outstandingCount!==1?'s':''}`, icon: '⚠️', color: 'red', pg: 'feecollect' },
+    { label: 'Total Balance Due', value: `Rs. ${totalDue.toLocaleString()}`,   subValue: `incl. opening bal Rs.${totalOpeningBalAll.toLocaleString()}`, icon: '⚖️', color: 'red', pg: 'feecollect' },
     { label: 'Cash In Hand',     value: `Rs. ${cashInHand.toLocaleString()}`,   icon: '💵', color: cashInHand >= 0 ? 'green' : 'red', pg: 'cashbook' },
     { label: 'Total Demand',     value: `Rs. ${totalDemand.toLocaleString()}`,  subValue: `Fee Rs.${totalMonthlyFee.toLocaleString()} + AF Rs.${totalAnnualFund.toLocaleString()} + Books Rs.${totalBooksValue.toLocaleString()}`, icon: '📋', color: 'blue', pg: 'feecollect' },
   ];
@@ -1173,6 +1183,23 @@ function Dashboard({ setPage }) {
               <span className="font-bold text-gray-700">Total In</span>
               <span className="font-extrabold text-emerald-700 text-base">Rs. {totalStudentIncome.toLocaleString()}</span>
             </div>
+            <div className="border-t-2 border-orange-200 pt-2 mt-1">
+              <p className="text-xs font-bold text-orange-600 uppercase tracking-widest mb-2">⚠️ Receivable (Outstanding)</p>
+              {totalOpeningBalAll > 0 && (
+                <div className="flex justify-between items-center mb-1">
+                  <span className="text-gray-500 flex items-center gap-1.5">📂 Opening Balance</span>
+                  <span className="font-bold text-orange-600">Rs. {totalOpeningBalAll.toLocaleString()}</span>
+                </div>
+              )}
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-gray-500 flex items-center gap-1.5">📋 Fee Outstanding</span>
+                <span className="font-bold text-red-600">Rs. {outstandingFee.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="font-bold text-gray-700">Total Receivable</span>
+                <span className="font-extrabold text-red-700 text-base">Rs. {totalDue.toLocaleString()}</span>
+              </div>
+            </div>
           </div>
           <div className="mt-3 cursor-pointer" onClick={() => setPage('feecollect')}>
             <div className="bg-emerald-100 text-emerald-700 text-xs font-semibold px-3 py-1.5 rounded-xl text-center hover:bg-emerald-200 transition-all">
@@ -1237,6 +1264,18 @@ function Dashboard({ setPage }) {
                 Rs. {netPayableVendors.toLocaleString()}
               </span>
             </div>
+            <div className="flex justify-between items-center text-xs">
+              <span className="text-gray-400">⚠️ Fees Receivable</span>
+              <span className={`font-semibold ${totalDue > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                Rs. {totalDue.toLocaleString()}
+              </span>
+            </div>
+            {totalOpeningBalAll > 0 && (
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-gray-400">📂 Opening Bal (Prev Dues)</span>
+                <span className="font-semibold text-orange-600">Rs. {totalOpeningBalAll.toLocaleString()}</span>
+              </div>
+            )}
           </div>
           <div className={`mt-3 text-center py-2 rounded-xl text-xs font-bold ${netPosition >= 0 ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}`}>
             {netPosition >= 0 ? '✅ Surplus' : '⚠️ Deficit Alert'}
@@ -1706,11 +1745,12 @@ function Students() {
           const bl = bookLists[st.id] || [];
           return s + bl.reduce((bs, b) => bs + Number(b.price||0)*Number(b.qty||0), 0);
         }, 0);
-        const totalNetDue = filtered.reduce((s, st) => s + Number(classFees[st.cls] || 0), 0);
+        const totalNetDue    = filtered.reduce((s, st) => s + Number(classFees[st.cls] || 0), 0);
+        const totalOpeningBal = filtered.reduce((s, st) => s + Number(st.openingBalance||0), 0);
         const withAF    = filtered.filter(st => Number(st.annualFund||0) > 0).length;
         const withBooks = filtered.filter(st => (bookLists[st.id]||[]).length > 0).length;
         return (
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4">
+          <div className="grid grid-cols-2 sm:grid-cols-6 gap-3 mb-4">
             <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
               <p className="text-xs text-blue-500 font-semibold uppercase mb-1">👨‍🎓 Students</p>
               <p className="text-xl font-extrabold text-blue-700">{filtered.length}</p>
@@ -1736,6 +1776,11 @@ function Students() {
               <p className="text-xl font-extrabold text-emerald-700">Rs. {(totalNetDue + totalAF + totalBooks).toLocaleString()}</p>
               <p className="text-xs text-gray-400 mt-0.5">Fee + AF + Books</p>
             </div>
+            <div className={`border rounded-xl px-4 py-3 ${totalOpeningBal>0?'bg-orange-50 border-orange-200':'bg-gray-50 border-gray-200'}`}>
+              <p className="text-xs text-orange-500 font-semibold uppercase mb-1">⚖️ Opening Bal</p>
+              <p className="text-xl font-extrabold text-orange-600">Rs. {totalOpeningBal.toLocaleString()}</p>
+              <p className="text-xs text-gray-400 mt-0.5">Prev dues carried</p>
+            </div>
           </div>
         );
       })()}
@@ -1748,6 +1793,7 @@ function Students() {
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b">
                   <tr className="text-left text-xs text-gray-500 font-semibold uppercase">
+                    <th className="px-4 py-3">Sr.</th>
                     <th className="px-4 py-3">Student Name</th>
                     <th className="px-4 py-3 hidden sm:table-cell">Father's Name</th>
                     <th className="px-4 py-3">Class</th>
@@ -1761,8 +1807,9 @@ function Students() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {filtered.map(s => (
+                  {filtered.map((s, idx) => (
                     <tr key={s.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-4 py-3 text-xs font-bold text-gray-400">{String(idx+1).padStart(2,'0')}</td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
                           {s.photo
@@ -2025,6 +2072,7 @@ function Inventory() {
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b">
                   <tr className="text-left text-xs text-gray-500 font-semibold uppercase">
+                    <th className="px-4 py-3">Sr.</th>
                     <th className="px-4 py-3">Item Name</th>
                     <th className="px-4 py-3">Type</th>
                     <th className="px-4 py-3">Qty</th>
@@ -2034,10 +2082,11 @@ function Inventory() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {items.map(item => {
+                  {items.map((item, idx) => {
                     const isLow = Number(item.qty) <= Number(item.threshold || 5);
                     return (
                       <tr key={item.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-4 py-3 text-xs font-bold text-gray-400">{String(idx+1).padStart(2,'0')}</td>
                         <td className="px-4 py-3 font-semibold text-gray-800">{item.name}</td>
                         <td className="px-4 py-3"><Badge color="purple">{item.type}</Badge></td>
                         <td className="px-4 py-3 font-bold text-gray-700">{item.qty}</td>
@@ -2424,6 +2473,7 @@ function Fees() {
                         <table className="w-full text-sm">
                           <thead className="bg-gray-50 border-b">
                             <tr className="text-left text-xs text-gray-500 font-semibold uppercase">
+                              <th className="px-4 py-3">Sr.</th>
                               <th className="px-4 py-3">Student</th>
                               <th className="px-4 py-3">Class</th>
                               <th className="px-4 py-3">Monthly Fee</th>
@@ -2434,11 +2484,12 @@ function Fees() {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-50">
-                            {status.map(({ stu, pay, due }) => {
+                            {status.map(({ stu, pay, due }, idx) => {
                               const disc   = Number(pay?.discount || 0);
                               const netDue = Math.max(0, Number(due) - disc);
                               return (
                               <tr key={stu.id} className="hover:bg-slate-50">
+                                <td className="px-4 py-3 text-xs font-bold text-gray-400">{String(idx+1).padStart(2,'0')}</td>
                                 <td className="px-4 py-3 font-semibold text-gray-800">{stu.name}</td>
                                 <td className="px-4 py-3"><Badge color="blue">Class {stu.cls}</Badge></td>
                                 <td className="px-4 py-3 text-gray-600">Rs. {Number(due).toLocaleString()}</td>
@@ -2741,9 +2792,7 @@ function FeeCollection() {
     const totalDue    = netMonthly + openingBal;      // total owed including prior balance
     const balance     = Math.max(0, totalDue - alreadyPaid);
     setCollMod({ stu, alreadyPaid, balance, openingBal, totalDue });
-    // Auto-fill amount = remaining balance (includes opening balance)
-    const autoAmount  = autoDisc > 0 ? String(netMonthly) : String(balance || due);
-    setCf({ month: vm, year: vy, feeAmount: autoAmount, discount: autoDisc > 0 ? String(autoDisc) : '', annualFund: '0', note: '', paymentMethod: 'Cash' });
+    setCf({ month: vm, year: vy, feeAmount: '', discount: autoDisc > 0 ? String(autoDisc) : '', annualFund: '0', note: '', paymentMethod: 'Cash' });
   };
 
   const collectFee = () => {
@@ -2840,7 +2889,14 @@ function FeeCollection() {
   const fullPaidCount    = students.filter(s => getStatus(s) === 'paid').length;
   const partialCount     = students.filter(s => getStatus(s) === 'partial').length;
   const unpaidCount      = students.filter(s => getStatus(s) === 'unpaid').length;
-  const netDueTotal   = students.reduce((s, st) => s + Number(classFees[st.cls] || 0), 0);
+  const netDueTotal      = students.reduce((s, st) => s + Number(classFees[st.cls] || 0), 0);
+  const totalBalanceDue  = students.reduce((s, st) => {
+    const due  = Number(classFees[st.cls] || 0);
+    const paid = paidMap[st.id]?.total || 0;
+    const disc = paidMap[st.id]?.totalDisc || 0;
+    const ob   = Number(st.openingBalance || 0);
+    return s + Math.max(0, due - disc + ob - paid);
+  }, 0);
 
   // Ledger: all-time payment history per student (or selected student)
   const ledgerStudents = ledgerStu ? students.filter(s => s.id === ledgerStu) : students;
@@ -2873,10 +2929,11 @@ function FeeCollection() {
       const due         = Number(classFees[stu.cls] || 0);
       const paid        = paidMap[stu.id]?.total || 0;
       const disc        = paidMap[stu.id]?.totalDisc || 0;
-      const outstanding = Math.max(0, due - disc - paid);
+      const ob          = Number(stu.openingBalance || 0);
+      const outstanding = Math.max(0, due - disc + ob - paid);
       const allocate    = Math.min(remaining, outstanding);
       remaining         = Math.max(0, remaining - allocate);
-      return { stu, due, paid, disc, outstanding, allocate };
+      return { stu, due, paid, disc, ob, outstanding, allocate };
     });
   }, [familyMod, familyForm.totalAmount, paidMap, classFees]);
 
@@ -2970,7 +3027,7 @@ function FeeCollection() {
       </div>
 
       {/* ── Stats Cards ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
+      <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 mb-4">
         {/* 1. Net Due */}
         <Card className="p-4 border-blue-100">
           <p className="text-xs text-gray-400 font-semibold uppercase mb-1">📋 Net Due</p>
@@ -3015,6 +3072,12 @@ function FeeCollection() {
           <p className="text-lg font-bold text-orange-500">{partialCount}</p>
           <p className="text-xs text-gray-400 mt-0.5">Partial payments</p>
         </Card>
+        {/* 6. Total Balance Due */}
+        <Card className={`p-4 ${totalBalanceDue>0?'border-red-200 bg-red-50':'border-emerald-100'}`}>
+          <p className="text-xs text-gray-400 font-semibold uppercase mb-1">⚖️ Balance Due</p>
+          <p className={`text-lg font-extrabold ${totalBalanceDue>0?'text-red-700':'text-emerald-600'}`}>Rs. {totalBalanceDue.toLocaleString()}</p>
+          <p className="text-xs text-gray-400 mt-0.5">Total outstanding</p>
+        </Card>
       </div>
 
       {/* ── Tab Bar ── */}
@@ -3049,6 +3112,7 @@ function FeeCollection() {
                   <table className="w-full text-sm">
                     <thead className="bg-gray-50 border-b">
                       <tr className="text-left text-xs text-gray-500 font-semibold uppercase">
+                        <th className="px-4 py-3">Sr.</th>
                         <th className="px-4 py-3">Student</th>
                         <th className="px-4 py-3 hidden lg:table-cell">Father</th>
                         <th className="px-4 py-3">Class</th>
@@ -3061,7 +3125,7 @@ function FeeCollection() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
-                      {filtered.map(stu => {
+                      {filtered.map((stu, idx) => {
                         const due        = Number(classFees[stu.cls] || 0);
                         // monthlyFee = student's personal rate → auto discount = classFee - monthlyFee
                         const stuRate    = Number(stu.monthlyFee || 0) || Number(stu.annualFund || 0);
@@ -3076,6 +3140,7 @@ function FeeCollection() {
                         const lastPay = info ? [...info.pays].sort((a,b)=>new Date(b.date)-new Date(a.date))[0] : null;
                         return (
                           <tr key={stu.id} className="hover:bg-slate-50">
+                            <td className="px-4 py-3 text-xs font-bold text-gray-400">{String(idx+1).padStart(2,'0')}</td>
                             <td className="px-4 py-3">
                               <div className="flex items-center gap-2">
                                 {stu.photo
@@ -3258,7 +3323,8 @@ function FeeCollection() {
                   const due  = Number(classFees[stu.cls] || 0);
                   const paid = paidMap[stu.id]?.total || 0;
                   const disc = paidMap[stu.id]?.totalDisc || 0;
-                  return s + Math.max(0, due - disc - paid);
+                  const ob   = Number(stu.openingBalance || 0);
+                  return s + Math.max(0, due - disc + ob - paid);
                 }, 0);
                 const allPaid = totalOutstanding === 0;
                 return (
@@ -3292,7 +3358,8 @@ function FeeCollection() {
                             const due         = Number(classFees[stu.cls] || 0);
                             const paid        = paidMap[stu.id]?.total || 0;
                             const disc        = paidMap[stu.id]?.totalDisc || 0;
-                            const outstanding = Math.max(0, due - disc - paid);
+                            const ob          = Number(stu.openingBalance || 0);
+                            const outstanding = Math.max(0, due - disc + ob - paid);
                             const st          = getStatus(stu);
                             return (
                               <tr key={stu.id} className="hover:bg-slate-50">
@@ -3604,7 +3671,8 @@ function FeeCollection() {
                   const due  = Number(classFees[stu.cls] || 0);
                   const paid = paidMap[stu.id]?.total || 0;
                   const disc = paidMap[stu.id]?.totalDisc || 0;
-                  return s + Math.max(0, due - disc - paid);
+                  const ob   = Number(stu.openingBalance || 0);
+                  return s + Math.max(0, due - disc + ob - paid);
                 }, 0);
                 const allPaid = totalOutstanding === 0;
                 return (
@@ -3640,7 +3708,8 @@ function FeeCollection() {
                             const due         = Number(classFees[stu.cls] || 0);
                             const paid        = paidMap[stu.id]?.total || 0;
                             const disc        = paidMap[stu.id]?.totalDisc || 0;
-                            const outstanding = Math.max(0, due - disc - paid);
+                            const ob          = Number(stu.openingBalance || 0);
+                            const outstanding = Math.max(0, due - disc + ob - paid);
                             const st          = getStatus(stu);
                             return (
                               <tr key={stu.id} className="hover:bg-slate-50">
@@ -3876,6 +3945,7 @@ function Expenses() {
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b">
                   <tr className="text-left text-xs text-gray-500 font-semibold uppercase">
+                    <th className="px-4 py-3">Sr.</th>
                     <th className="px-4 py-3">Date</th>
                     <th className="px-4 py-3">Title</th>
                     <th className="px-4 py-3 hidden sm:table-cell">Category</th>
@@ -3885,8 +3955,9 @@ function Expenses() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {[...filtered].sort((a,b) => new Date(b.date)-new Date(a.date)).map(e => (
+                  {[...filtered].sort((a,b) => new Date(b.date)-new Date(a.date)).map((e, idx) => (
                     <tr key={e.id} className="hover:bg-slate-50">
+                      <td className="px-4 py-3 text-xs font-bold text-gray-400">{String(idx+1).padStart(2,'0')}</td>
                       <td className="px-4 py-3 text-gray-500 text-xs">{new Date(e.date).toLocaleDateString('en-PK')}</td>
                       <td className="px-4 py-3 font-semibold text-gray-800">{e.title}</td>
                       <td className="px-4 py-3 hidden sm:table-cell"><Badge color="purple">{e.category}</Badge></td>
@@ -3980,13 +4051,22 @@ function FamilyLedger() {
     });
   }, [allStudents]);
 
-  // Search: find matching family by Family ID, Student Name, or Father Name
+  // Sr. number map: family name → sequential number (1-based, stable across search)
+  const familySrMap = useMemo(() => {
+    const map = {};
+    families.forEach((f, i) => { map[f] = i + 1; });
+    return map;
+  }, [families]);
+
+  // Search: find matching family by Sr. No, Family ID, Student Name, or Father Name
   const filteredFamilies = useMemo(() => {
     if (!searchQ.trim()) return families;
     const q = searchQ.trim().toLowerCase();
     return families.filter(f => {
       const sibs = allStudents.filter(s => s.family === f);
+      const sr   = String(familySrMap[f] || '');
       return (
+        sr === q.replace(/^0+/, '') ||
         f.toLowerCase().includes(q) ||
         sibs.some(s => (s.familyId||'').toLowerCase().includes(q)) ||
         sibs.some(s => (s.name||'').toLowerCase().includes(q)) ||
@@ -4376,7 +4456,7 @@ function FamilyLedger() {
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-lg">🔍</span>
             <input
               className="w-full pl-10 pr-4 py-2 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-purple-400 bg-white"
-              placeholder="Search by Family ID (e.g. F-001), Student Name, or Father Name..."
+              placeholder="Search by Sr. No, Family ID, Student Name, or Father Name..."
               value={searchQ}
               onChange={e => { setSearchQ(e.target.value); setSelFamily(''); }}
             />
@@ -4387,10 +4467,13 @@ function FamilyLedger() {
             {filteredFamilies.length === 0 && <p className="text-sm text-gray-400 italic">No families match your search.</p>}
             {filteredFamilies.map(f => {
               const fid = allStudents.find(s => s.family === f && s.familyId)?.familyId;
+              const sr  = familySrMap[f] || '';
               return (
                 <button key={f} onClick={() => { setSelFamily(f); setSearchQ(''); }}
-                  className={`px-4 py-2 rounded-xl text-sm font-bold border-2 transition-all ${selFamily===f?'bg-purple-600 border-purple-600 text-white shadow':'bg-white border-gray-200 text-gray-600 hover:border-purple-400'}`}>
-                  👨‍👩‍👧‍👦 {f}{fid ? <span className="ml-2 text-xs opacity-70">{fid}</span> : ''}
+                  className={`px-3 py-2 rounded-xl text-sm font-bold border-2 transition-all flex items-center gap-2 ${selFamily===f?'bg-purple-600 border-purple-600 text-white shadow':'bg-white border-gray-200 text-gray-600 hover:border-purple-400'}`}>
+                  <span className={`text-xs font-extrabold px-1.5 py-0.5 rounded-lg ${selFamily===f?'bg-white/20 text-white':'bg-purple-100 text-purple-700'}`}>{String(sr).padStart(2,'0')}</span>
+                  👨‍👩‍👧‍👦 {f}
+                  {fid ? <span className="text-xs opacity-60">{fid}</span> : ''}
                 </button>
               );
             })}
@@ -5092,6 +5175,7 @@ function Staff() {
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b">
                   <tr className="text-left text-xs text-gray-500 font-semibold uppercase">
+                    <th className="px-4 py-3">Sr.</th>
                     <th className="px-4 py-3">Name</th>
                     <th className="px-4 py-3 hidden sm:table-cell">Father's Name</th>
                     <th className="px-4 py-3">Role</th>
@@ -5101,7 +5185,7 @@ function Staff() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {staff.map(m => {
+                  {staff.map((m, idx) => {
                     const paidAmt  = monthPaidTotalMap[m.id] || 0;
                     const salary   = Number(m.salary);
                     const remaining = Math.max(0, salary - paidAmt);
@@ -5111,6 +5195,7 @@ function Staff() {
                     const lastPay   = pays[pays.length - 1];
                     return (
                       <tr key={m.id} className="hover:bg-slate-50">
+                        <td className="px-4 py-3 text-xs font-bold text-gray-400">{String(idx+1).padStart(2,'0')}</td>
                         <td className="px-4 py-3">
                           <div className="font-semibold text-gray-800">{m.name}</div>
                           {m.contact && <div className="text-xs text-gray-400">{m.contact}</div>}
@@ -5384,6 +5469,7 @@ function UserAdmin({ onPasswordChange }) {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b">
                 <tr className="text-left text-xs text-gray-500 font-semibold uppercase">
+                  <th className="px-4 py-3">Sr.</th>
                   <th className="px-4 py-3">Full Name</th>
                   <th className="px-4 py-3">Username</th>
                   <th className="px-4 py-3">Role</th>
@@ -5392,8 +5478,9 @@ function UserAdmin({ onPasswordChange }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {users.map(u => (
+                {users.map((u, idx) => (
                   <tr key={u.id} className={`hover:bg-slate-50 ${u.disabled ? 'opacity-60' : ''}`}>
+                    <td className="px-4 py-3 text-xs font-bold text-gray-400">{String(idx+1).padStart(2,'0')}</td>
                     <td className="px-4 py-3 font-semibold text-gray-800">
                       {u.name}
                       {u.disabled && <span className="ml-2 text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full font-semibold">Disabled</span>}
@@ -7476,6 +7563,7 @@ function CashBook() {
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50 border-b sticky top-0">
                     <tr className="text-left text-xs text-gray-500 font-semibold uppercase">
+                      <th className="px-4 py-3 w-10">Sr.</th>
                       <th className="px-4 py-3 w-28">Date</th>
                       <th className="px-4 py-3 w-24">Type</th>
                       <th className="px-4 py-3">Description</th>
@@ -7493,23 +7581,24 @@ function CashBook() {
                         <React.Fragment key={date}>
                           {/* Day header */}
                           <tr className="bg-blue-50 border-t-2 border-blue-200">
-                            <td colSpan="8" className="px-4 py-2 font-bold text-blue-800 text-xs tracking-wide uppercase">
+                            <td colSpan="9" className="px-4 py-2 font-bold text-blue-800 text-xs tracking-wide uppercase">
                               📅 {dateLabel}
                             </td>
                           </tr>
                           {/* Opening balance row */}
                           <tr className="bg-gray-50 border-b border-gray-100">
+                            <td className="px-4 py-1.5 text-xs text-gray-400 italic"></td>
                             <td className="px-4 py-1.5 text-xs text-gray-400 italic">Opening</td>
                             <td colSpan="5" className="px-4 py-1.5 text-xs text-gray-400 italic">Balance brought forward</td>
                             <td className={`px-4 py-1.5 text-right text-xs font-bold italic ${openingBal>=0?'text-blue-600':'text-red-500'}`}>{fmtBal(openingBal)}</td>
                             <td></td>
                           </tr>
                           {/* Entries */}
-                          {de.map(e => {
+                          {de.map((e, ei) => {
                             const an = accounts.find(a => a.id === e.accountId)?.name || e.accountName || '';
                             return (
                               <tr key={e.id} className={`hover:bg-slate-50 border-b border-gray-50 ${e.refType==='transfer'?'bg-purple-50/40':e.type==='expense'?'bg-red-50/30':''}`}>
-                                <td className="px-4 py-2.5 text-gray-400 text-xs"></td>
+                                <td className="px-4 py-2.5 text-xs font-bold text-gray-400">{String(ei+1).padStart(2,'0')}</td>
                                 <td className="px-4 py-2.5">
                                   {e.refType==='transfer'
                                     ? <Badge color="purple">↔ Transfer</Badge>
@@ -7540,7 +7629,7 @@ function CashBook() {
                           })}
                           {/* Daily summary row */}
                           <tr className="bg-amber-50 border-t border-amber-200">
-                            <td colSpan="4" className="px-4 py-2 text-xs font-bold text-amber-800 text-right">Day Total:</td>
+                            <td colSpan="5" className="px-4 py-2 text-xs font-bold text-amber-800 text-right">Day Total:</td>
                             <td className="px-4 py-2 text-right text-xs font-bold text-emerald-700">Rs. {totalIn.toLocaleString()}</td>
                             <td className="px-4 py-2 text-right text-xs font-bold text-red-600">Rs. {totalOut.toLocaleString()}</td>
                             <td className={`px-4 py-2 text-right text-sm font-extrabold ${closingBal>=0?'text-blue-800':'text-red-700'}`}>{fmtBal(closingBal)}</td>
@@ -7552,7 +7641,7 @@ function CashBook() {
                   </tbody>
                   <tfoot className="bg-gray-100 border-t-2 border-gray-300">
                     <tr>
-                      <td colSpan="4" className="px-4 py-3 text-sm font-bold text-gray-700 text-right">Grand Total:</td>
+                      <td colSpan="5" className="px-4 py-3 text-sm font-bold text-gray-700 text-right">Grand Total:</td>
                       <td className="px-4 py-3 text-right font-extrabold text-emerald-700">Rs. {filteredWithRunning.filter(e=>e.type==='income').reduce((s,e)=>s+Number(e.amount),0).toLocaleString()}</td>
                       <td className="px-4 py-3 text-right font-extrabold text-red-600">Rs. {filteredWithRunning.filter(e=>e.type==='expense').reduce((s,e)=>s+Number(e.amount),0).toLocaleString()}</td>
                       <td></td>
