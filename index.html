@@ -990,23 +990,35 @@ function Dashboard({ setPage }) {
   const bookLists = S.get(K.BL, {});
   const getStudentBookTotal = (stu) => (bookLists[stu.id] || []).reduce((s, b) => s + Number(b.price||0)*Number(b.qty||0), 0);
 
+  // All-time paid map (all months, not just current month)
+  const allTimePaidMap = {};
+  payments.forEach(p => { allTimePaidMap[p.stuId] = (allTimePaidMap[p.stuId]||0) + Number(p.amount); });
+  const allTimeDiscMap = {};
+  payments.forEach(p => { allTimeDiscMap[p.stuId] = (allTimeDiscMap[p.stuId]||0) + Number(p.discount||0); });
+
   const dashStuDisc = (st) => { const cf=Number(classFees[st.cls]||0); const sr=Number(st.monthlyFee||0); return sr>0&&sr<cf?cf-sr:0; };
+  // Net Outstanding = monthly fee − auto-discount + opening balance − ALL-TIME paid
   const outstandingFee = students.reduce((s, st) => {
-    const cf = Number(classFees[st.cls]||0);
-    const ob = Number(st.openingBalance||0);
-    const disc = dashStuDisc(st);
-    return s + Math.max(0, cf - disc + ob - (paidAmountMap[st.id]||0));
+    const cf   = Number(classFees[st.cls]||0);
+    const ob   = Number(st.openingBalance||0);
+    const disc = Math.max(dashStuDisc(st), allTimeDiscMap[st.id]||0);
+    const paid = allTimePaidMap[st.id]||0;
+    return s + Math.max(0, Math.max(0, cf - disc) + ob - paid);
   }, 0);
-  const outstandingAF  = students.reduce((s, st) => s + Math.max(0, Number(st.annualFund||0) - (paidAFMap[st.id]||0)), 0);
-  const outstandingBks = students.reduce((s, st) => s + Math.max(0, getStudentBookTotal(st) - (paidBooksMap[st.id]||0)), 0);
+  const allTimePaidAFMap = {};
+  payments.forEach(p => { allTimePaidAFMap[p.stuId] = (allTimePaidAFMap[p.stuId]||0) + Number(p.annualFund||0); });
+  const allTimePaidBksMap = {};
+  payments.forEach(p => { if (p.booksPaid > 0) allTimePaidBksMap[p.stuId] = (allTimePaidBksMap[p.stuId]||0) + Number(p.booksPaid); });
+  const outstandingAF  = students.reduce((s, st) => s + Math.max(0, Number(st.annualFund||0) - (allTimePaidAFMap[st.id]||0)), 0);
+  const outstandingBks = students.reduce((s, st) => s + Math.max(0, getStudentBookTotal(st) - (allTimePaidBksMap[st.id]||0)), 0);
   const totalDue = outstandingFee + outstandingAF + outstandingBks;
 
   const outstandingCount = students.filter(st => {
     const cf   = Number(classFees[st.cls] || 0);
     const ob   = Number(st.openingBalance || 0);
-    const disc = dashStuDisc(st);
-    const paid = paidAmountMap[st.id] || 0;
-    return Math.max(0, cf - disc + ob - paid) > 0;
+    const disc = Math.max(dashStuDisc(st), allTimeDiscMap[st.id]||0);
+    const paid = allTimePaidMap[st.id] || 0;
+    return Math.max(0, Math.max(0, cf - disc) + ob - paid) > 0;
   }).length;
 
   // Month-wise books collection
@@ -1068,8 +1080,25 @@ function Dashboard({ setPage }) {
     const totalExp = monthExp.reduce((s,e) => s+Number(e.amount),0);
     const paidMap = {};
     monthPays.forEach(p => { paidMap[p.stuId] = (paidMap[p.stuId]||0) + Number(p.amount); });
-    const unpaid = students.filter(s => Number(classFees[s.cls]||0) > (paidMap[s.id]||0));
-    const totalDue = unpaid.reduce((s,st) => s + Math.max(0, Number(classFees[st.cls]||0) - (paidMap[st.id]||0)), 0);
+    const allPayments = S.get(K.PAY, []);
+    const allPaidMap = {};
+    allPayments.forEach(p => { allPaidMap[p.stuId] = (allPaidMap[p.stuId]||0) + Number(p.amount); });
+    const allDiscMap = {};
+    allPayments.forEach(p => { allDiscMap[p.stuId] = (allDiscMap[p.stuId]||0) + Number(p.discount||0); });
+    const unpaid = students.filter(s => {
+      const cf = Number(classFees[s.cls]||0);
+      const ob = Number(s.openingBalance||0);
+      const disc = allDiscMap[s.id]||0;
+      const paid = allPaidMap[s.id]||0;
+      return Math.max(0, Math.max(0, cf - disc) + ob - paid) > 0;
+    });
+    const totalDue = unpaid.reduce((s,st) => {
+      const cf = Number(classFees[st.cls]||0);
+      const ob = Number(st.openingBalance||0);
+      const disc = allDiscMap[st.id]||0;
+      const paid = allPaidMap[st.id]||0;
+      return s + Math.max(0, Math.max(0, cf - disc) + ob - paid);
+    }, 0);
     printPage('Dashboard Summary', `
       <h2>Dashboard Summary — ${MONTHS[m]} ${y}</h2>
       <div class="summary">
@@ -1081,9 +1110,9 @@ function Dashboard({ setPage }) {
         <div class="sum-card"><div class="val">Rs. ${totalDue.toLocaleString()}</div><div class="lbl">Outstanding Dues</div></div>
       </div>
       <h2>Unpaid Students (${MONTHS[m]} ${y})</h2>
-      <table><thead><tr><th>#</th><th>Student Name</th><th>Father</th><th>Class</th><th>Roll</th><th>Monthly Fee</th><th>Paid</th><th>Outstanding</th></tr></thead>
-      <tbody>${unpaid.map((s,i)=>`<tr><td>${i+1}</td><td>${s.name}</td><td>${s.father||'—'}</td><td>${s.cls}</td><td>${s.roll}</td><td>Rs. ${Number(classFees[s.cls]||0).toLocaleString()}</td><td>Rs. ${(paidMap[s.id]||0).toLocaleString()}</td><td><b>Rs. ${Math.max(0,Number(classFees[s.cls]||0)-(paidMap[s.id]||0)).toLocaleString()}</b></td></tr>`).join('')}</tbody>
-      <tfoot><tr><td colspan="7" style="text-align:right">Total Outstanding:</td><td>Rs. ${totalDue.toLocaleString()}</td></tr></tfoot>
+      <table><thead><tr><th>#</th><th>Student Name</th><th>Father</th><th>Class</th><th>Roll</th><th>Monthly Fee</th><th>Opening Bal</th><th>All-Time Paid</th><th>Outstanding</th></tr></thead>
+      <tbody>${unpaid.map((s,i)=>{ const cf=Number(classFees[s.cls]||0); const ob=Number(s.openingBalance||0); const disc=allDiscMap[s.id]||0; const paid=allPaidMap[s.id]||0; const bal=Math.max(0,Math.max(0,cf-disc)+ob-paid); return `<tr><td>${i+1}</td><td>${s.name}</td><td>${s.father||'—'}</td><td>${s.cls}</td><td>${s.roll}</td><td>Rs. ${cf.toLocaleString()}</td><td>Rs. ${ob.toLocaleString()}</td><td>Rs. ${paid.toLocaleString()}</td><td><b>Rs. ${bal.toLocaleString()}</b></td></tr>`; }).join('')}</tbody>
+      <tfoot><tr><td colspan="8" style="text-align:right">Total Outstanding:</td><td>Rs. ${totalDue.toLocaleString()}</td></tr></tfoot>
       </table>`);
   };
 
@@ -1801,6 +1830,7 @@ function Students() {
                     <th className="px-4 py-3 hidden sm:table-cell">Family ID</th>
                     <th className="px-4 py-3 hidden sm:table-cell">Family</th>
                     <th className="px-4 py-3 hidden md:table-cell">Annual Fund</th>
+                    <th className="px-4 py-3 hidden md:table-cell text-orange-500">Opening Bal</th>
                     <th className="px-4 py-3 hidden md:table-cell">Contact</th>
                     <th className="px-4 py-3 hidden md:table-cell">Address</th>
                     <th className="px-4 py-3 text-right">Actions</th>
@@ -1825,6 +1855,7 @@ function Students() {
                       <td className="px-4 py-3 hidden sm:table-cell">{s.familyId ? <Badge color="blue">{s.familyId}</Badge> : <span className="text-gray-300">—</span>}</td>
                       <td className="px-4 py-3 hidden sm:table-cell">{s.family ? <Badge color="purple">{s.family}</Badge> : <span className="text-gray-300">—</span>}</td>
                       <td className="px-4 py-3 hidden md:table-cell">{s.annualFund ? <Badge color="purple">AF Rs. {Number(s.annualFund).toLocaleString()}</Badge> : <span className="text-gray-300">—</span>}</td>
+                      <td className="px-4 py-3 hidden md:table-cell">{Number(s.openingBalance||0) > 0 ? <span className="text-orange-600 font-bold text-sm">Rs. {Number(s.openingBalance).toLocaleString()}</span> : <span className="text-gray-300">—</span>}</td>
                       <td className="px-4 py-3 text-gray-500 hidden md:table-cell">{s.contact || '—'}</td>
                       <td className="px-4 py-3 text-gray-500 hidden md:table-cell text-xs">{s.address || '—'}</td>
                       <td className="px-4 py-3 text-right space-x-1">
@@ -2513,7 +2544,7 @@ function Fees() {
                                 <td className="px-4 py-3 text-right">
                                   {pay
                                     ? <Btn sm variant="outline" onClick={() => printReceipt(pay, stu)}>🖨️ Receipt</Btn>
-                                    : <Btn sm onClick={() => { setPayMod(stu); setPf({ month: vm, year: vy, amount: String(due||''), discount: '', annualFund: '0', note:'', paymentMethod:'Cash' }); }}>Record Payment</Btn>
+                                    : <Btn sm onClick={() => { const cf=Number(classFees[stu.cls]||0); const sr=Number(stu.monthlyFee||0); const ad=sr>0&&sr<cf?cf-sr:0; setPayMod(stu); setPf({ month: vm, year: vy, amount: '', discount: ad>0?String(ad):'', annualFund: '0', note:'', paymentMethod:'Cash' }); }}>Record Payment</Btn>
                                   }
                                 </td>
                               </tr>
@@ -2638,9 +2669,45 @@ function Fees() {
       )}
 
       {/* ── Record Payment Modal ── */}
-      {payMod && (
+      {payMod && (() => {
+        const pmCF      = Number(classFees[payMod.cls] || 0);
+        const pmRate    = Number(payMod.monthlyFee || 0);
+        const pmAutoD   = pmRate > 0 && pmRate < pmCF ? pmCF - pmRate : 0;
+        const pmDisc    = Number(pf.discount || 0);
+        const pmOB      = Number(payMod.openingBalance || 0);
+        const pmNetFee  = Math.max(0, pmCF - (pmDisc || pmAutoD));
+        const pmTotalDue = pmNetFee + pmOB;
+        const pmAllTimePaid = payments.filter(p => p.stuId === payMod.id).reduce((s,p) => s + Number(p.amount), 0);
+        const pmBal     = Math.max(0, pmTotalDue - pmAllTimePaid);
+        const pmReceiving = Number(pf.amount || 0);
+        const pmAfter   = pmTotalDue - pmAllTimePaid - pmReceiving;
+        return (
         <Modal title={`Record Payment — ${payMod.name}`} onClose={() => setPayMod(null)}>
-          <p className="text-sm text-gray-500 mb-4">Class {payMod.cls} | Roll: {payMod.roll}</p>
+          {/* Student info header */}
+          <div className="bg-blue-50 rounded-xl p-3 mb-4">
+            <p className="font-bold text-blue-800">{payMod.name}</p>
+            <p className="text-sm text-blue-600">Class {payMod.cls} | Roll: {payMod.roll}{payMod.family ? ` | ${payMod.family}` : ''}</p>
+            {pmOB > 0 && (
+              <div className="mt-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5 text-sm text-amber-700">
+                📂 Opening Balance (prev dues): <strong>Rs. {pmOB.toLocaleString()}</strong>
+              </div>
+            )}
+            <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+              <div className="bg-white rounded-lg px-3 py-1.5">
+                <span className="text-gray-400 text-xs block">Total Due</span>
+                <strong className="text-blue-700">Rs. {pmTotalDue.toLocaleString()}</strong>
+                {pmOB > 0 && <span className="text-xs text-amber-500 block">incl. prev Rs. {pmOB.toLocaleString()}</span>}
+              </div>
+              <div className="bg-white rounded-lg px-3 py-1.5">
+                <span className="text-gray-400 text-xs block">All-Time Paid</span>
+                <strong className="text-emerald-700">Rs. {pmAllTimePaid.toLocaleString()}</strong>
+              </div>
+              <div className="bg-white rounded-lg px-3 py-1.5 col-span-2">
+                <span className="text-gray-400 text-xs block">Balance Remaining</span>
+                <strong className={pmBal > 0 ? 'text-red-600' : 'text-emerald-700'}>Rs. {pmBal.toLocaleString()}</strong>
+              </div>
+            </div>
+          </div>
           <div className="flex gap-2 mb-1">
             <div className="flex-1">
               <Sel label="Month *" value={pf.month} onChange={e => setPf({...pf, month: Number(e.target.value)})}
@@ -2651,13 +2718,21 @@ function Fees() {
                 options={years.map(y => ({v:y, l:String(y)}))}/>
             </div>
           </div>
-          <Inp label="Monthly Fee Amount (Rs.) *" type="number" min="1" value={pf.amount} onChange={e => setPf({...pf, amount: e.target.value})} placeholder="Enter amount paid"/>
+          <Inp label="Amount Received (Rs.) *" type="number" min="1" value={pf.amount} onChange={e => setPf({...pf, amount: e.target.value})} placeholder="Enter amount received now"/>
           <Inp label="Discount (Rs.)" type="number" min="0" value={pf.discount} onChange={e => setPf({...pf, discount: e.target.value})} placeholder="0 if no discount"/>
-          {Number(pf.discount) > 0 && (
+          {(pmDisc > 0 || pmOB > 0 || pmReceiving > 0) && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-3 text-sm">
-              <div className="flex justify-between text-gray-600"><span>Fee:</span><span className="font-semibold">Rs. {Number(pf.amount||0).toLocaleString()}</span></div>
-              <div className="flex justify-between text-red-600"><span>Discount:</span><span className="font-semibold">- Rs. {Number(pf.discount||0).toLocaleString()}</span></div>
-              <div className="flex justify-between font-bold text-emerald-700 border-t border-amber-200 mt-1 pt-1"><span>Net:</span><span>Rs. {Math.max(0, Number(pf.amount||0)-Number(pf.discount||0)).toLocaleString()}</span></div>
+              <div className="flex justify-between text-gray-600 mb-1"><span>Class Fee:</span><span className="font-semibold">Rs. {pmCF.toLocaleString()}</span></div>
+              {pmDisc > 0 && <div className="flex justify-between text-red-600 mb-1"><span>Discount:</span><span className="font-semibold">− Rs. {pmDisc.toLocaleString()}</span></div>}
+              {pmDisc > 0 && <div className="flex justify-between text-blue-700 font-semibold mb-1"><span>Monthly Net Fee:</span><span>Rs. {Math.max(0, pmCF - pmDisc).toLocaleString()}</span></div>}
+              {pmOB > 0 && <div className="flex justify-between text-amber-700 font-semibold mb-1"><span>Opening Balance (prev dues):</span><span>+ Rs. {pmOB.toLocaleString()}</span></div>}
+              <div className="flex justify-between text-blue-800 font-bold border-t border-amber-300 pt-1 mb-1"><span>Total Net Due:</span><span>Rs. {pmTotalDue.toLocaleString()}</span></div>
+              {pmAllTimePaid > 0 && <div className="flex justify-between text-emerald-700 mb-1"><span>Already Paid (all-time):</span><span className="font-semibold">− Rs. {pmAllTimePaid.toLocaleString()}</span></div>}
+              {pmReceiving > 0 && <div className="flex justify-between text-gray-600 mb-1"><span>Receiving Now:</span><span className="font-semibold">− Rs. {pmReceiving.toLocaleString()}</span></div>}
+              {pmReceiving > 0 && <div className={`flex justify-between font-bold border-t border-amber-300 pt-1 ${pmAfter > 0 ? 'text-red-600' : pmAfter < 0 ? 'text-emerald-700' : 'text-gray-500'}`}>
+                <span>{pmAfter > 0 ? '⚠️ Balance Remaining:' : pmAfter < 0 ? '✅ Advance:' : '✅ Fully Cleared'}</span>
+                <span>Rs. {Math.abs(pmAfter).toLocaleString()}</span>
+              </div>}
             </div>
           )}
           <Inp label="Annual Fund (Rs.)" type="number" min="0" value={pf.annualFund} onChange={e => setPf({...pf, annualFund: e.target.value})} placeholder="0 if not applicable"/>
@@ -2673,12 +2748,17 @@ function Fees() {
               ))}
             </div>
           </div>
-          <div className="flex gap-2 mt-5">
-            <Btn full variant="green" onClick={recordPayment}>Save & Print Receipt</Btn>
+          <div className="bg-emerald-50 rounded-xl p-3 mb-3 flex justify-between items-center">
+            <span className="font-bold text-emerald-800">Collecting Now:</span>
+            <span className="text-xl font-extrabold text-emerald-700">Rs. {(pmReceiving + Number(pf.annualFund||0)).toLocaleString()}</span>
+          </div>
+          <div className="flex gap-2 mt-2">
+            <Btn full variant="green" onClick={recordPayment}>✅ Save & Print Receipt</Btn>
             <Btn variant="outline" onClick={() => setPayMod(null)}>Cancel</Btn>
           </div>
         </Modal>
-      )}
+        );
+      })()}
 
       {/* ── Auto-print receipt after recording ── */}
       {receipt && (() => {
@@ -2745,6 +2825,17 @@ function FeeCollection() {
     });
     return map;
   }, [payments, vm, vy]);
+
+  // All-time paid map (across ALL months) — used for closing balance & totalBalanceDue card
+  const allTimePaidMapFC = useMemo(() => {
+    const map = {};
+    payments.forEach(p => {
+      if (!map[p.stuId]) map[p.stuId] = { total: 0, totalDisc: 0 };
+      map[p.stuId].total     += Number(p.amount || 0);
+      map[p.stuId].totalDisc += Number(p.discount || 0);
+    });
+    return map;
+  }, [payments]);
 
   const getStatus = (stu) => {
     const due  = Number(classFees[stu.cls] || 0);
@@ -2891,11 +2982,14 @@ function FeeCollection() {
   const unpaidCount      = students.filter(s => getStatus(s) === 'unpaid').length;
   const netDueTotal      = students.reduce((s, st) => s + Number(classFees[st.cls] || 0), 0);
   const totalBalanceDue  = students.reduce((s, st) => {
-    const due  = Number(classFees[st.cls] || 0);
-    const paid = paidMap[st.id]?.total || 0;
-    const disc = paidMap[st.id]?.totalDisc || 0;
-    const ob   = Number(st.openingBalance || 0);
-    return s + Math.max(0, due - disc + ob - paid);
+    const due      = Number(classFees[st.cls] || 0);
+    const stuRate  = Number(st.monthlyFee || 0);
+    const autoDisc = stuRate > 0 && stuRate < due ? due - stuRate : 0;
+    const atInfo   = allTimePaidMapFC[st.id];
+    const paid     = atInfo ? atInfo.total : 0;
+    const disc     = atInfo ? Math.max(atInfo.totalDisc, autoDisc) : autoDisc;
+    const ob       = Number(st.openingBalance || 0);
+    return s + Math.max(0, Math.max(0, due - disc) + ob - paid);
   }, 0);
 
   // Ledger: all-time payment history per student (or selected student)
@@ -2926,16 +3020,20 @@ function FeeCollection() {
     if (!familyMod || !Number(familyForm.totalAmount)) return [];
     let remaining = Number(familyForm.totalAmount);
     return familyMod.siblings.map(stu => {
-      const due         = Number(classFees[stu.cls] || 0);
-      const paid        = paidMap[stu.id]?.total || 0;
-      const disc        = paidMap[stu.id]?.totalDisc || 0;
-      const ob          = Number(stu.openingBalance || 0);
-      const outstanding = Math.max(0, due - disc + ob - paid);
+      const due      = Number(classFees[stu.cls] || 0);
+      const stuRate  = Number(stu.monthlyFee || 0);
+      const autoDisc = stuRate > 0 && stuRate < due ? due - stuRate : 0;
+      const atInfo   = allTimePaidMapFC[stu.id];
+      const paid     = atInfo ? atInfo.total : 0;
+      const disc     = atInfo ? Math.max(atInfo.totalDisc, autoDisc) : autoDisc;
+      const ob       = Number(stu.openingBalance || 0);
+      const outstanding = Math.max(0, Math.max(0, due - disc) + ob - paid);
       const allocate    = Math.min(remaining, outstanding);
       remaining         = Math.max(0, remaining - allocate);
-      return { stu, due, paid, disc, ob, outstanding, allocate };
+      const balAfter    = outstanding - allocate;
+      return { stu, due, paid, disc, ob, outstanding, allocate, balAfter };
     });
-  }, [familyMod, familyForm.totalAmount, paidMap, classFees]);
+  }, [familyMod, familyForm.totalAmount, allTimePaidMapFC, classFees]);
 
   const canCollect = isAdmin || staffCanModify || isPrincipal; // principal CAN collect new fees
   const canModify  = isAdmin || staffCanModify;                 // principal CANNOT edit/delete existing
@@ -3226,6 +3324,36 @@ function FeeCollection() {
                         );
                       })}
                     </tbody>
+                    <tfoot className="bg-gray-800 border-t-2 border-gray-700">
+                      <tr>
+                        <td colSpan="8" className="px-4 py-3 text-right text-xs font-bold text-gray-300 uppercase tracking-wide">
+                          Closing Balance ({filtered.length} students)
+                        </td>
+                        <td className="px-4 py-3">
+                          {(() => {
+                            const total = filtered.reduce((sum, stu) => {
+                              const due      = Number(classFees[stu.cls] || 0);
+                              const stuRate  = Number(stu.monthlyFee || 0);
+                              const autoDisc = stuRate > 0 && stuRate < due ? due - stuRate : 0;
+                              const atInfo   = allTimePaidMapFC[stu.id];
+                              const paid     = atInfo ? atInfo.total : 0;
+                              const disc     = atInfo ? Math.max(atInfo.totalDisc, autoDisc) : autoDisc;
+                              const ob       = Number(stu.openingBalance || 0);
+                              return sum + Math.max(0, Math.max(0, due - disc) + ob - paid);
+                            }, 0);
+                            return (
+                              <div>
+                                <span className={`font-extrabold text-base ${total > 0 ? 'text-red-400' : 'text-emerald-400'}`}>
+                                  Rs. {total.toLocaleString()}
+                                </span>
+                                <div className="text-xs text-gray-400 font-semibold">{total > 0 ? '⬆ Due' : '✅ All Settled'}</div>
+                              </div>
+                            );
+                          })()}
+                        </td>
+                        <td className="px-4 py-3"></td>
+                      </tr>
+                    </tfoot>
                   </table>
                 </div>
               </Card>
@@ -3247,25 +3375,101 @@ function FeeCollection() {
               {CLASSES.map(c => <option key={c} value={c}>Class {c}</option>)}
             </select>
           </div>
+          {/* ── Closing Balance Summary Card ── */}
+          {(() => {
+            const vis = ledgerStudents.filter(s => fcls === 'All' || s.cls === fcls);
+            const closingBal = vis.reduce((sum, stu) => {
+              const due      = Number(classFees[stu.cls] || 0);
+              const stuRate  = Number(stu.monthlyFee || 0);
+              const autoDisc = stuRate > 0 && stuRate < due ? due - stuRate : 0;
+              const atInfo   = allTimePaidMapFC[stu.id];
+              const paid     = atInfo ? atInfo.total : 0;
+              const disc     = atInfo ? Math.max(atInfo.totalDisc, autoDisc) : autoDisc;
+              const ob       = Number(stu.openingBalance || 0);
+              return sum + Math.max(0, Math.max(0, due - disc) + ob - paid);
+            }, 0);
+            const totalPaidAll = vis.reduce((sum, stu) => sum + (allTimePaidMapFC[stu.id]?.total || 0), 0);
+            const totalDueAll  = vis.reduce((sum, stu) => {
+              const due = Number(classFees[stu.cls] || 0);
+              const stuRate = Number(stu.monthlyFee || 0);
+              const autoDisc = stuRate > 0 && stuRate < due ? due - stuRate : 0;
+              const disc = Math.max(allTimePaidMapFC[stu.id]?.totalDisc || 0, autoDisc);
+              const ob = Number(stu.openingBalance || 0);
+              return sum + Math.max(0, due - disc) + ob;
+            }, 0);
+            return (
+              <div className={`rounded-2xl p-4 mb-4 flex flex-wrap gap-4 items-center justify-between ${closingBal > 0 ? 'bg-red-50 border-2 border-red-200' : 'bg-emerald-50 border-2 border-emerald-200'}`}>
+                <div>
+                  <p className="text-xs font-bold uppercase text-gray-500 mb-0.5">⚖️ Closing Balance — {ledgerStu ? '1 Student' : `${vis.length} Students`}</p>
+                  <p className={`text-2xl font-extrabold ${closingBal > 0 ? 'text-red-700' : 'text-emerald-700'}`}>
+                    Rs. {closingBal.toLocaleString()}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-0.5">{closingBal > 0 ? '⬆ Total outstanding balance due' : '✅ All accounts settled'}</p>
+                </div>
+                <div className="flex gap-4 text-sm">
+                  <div className="text-center">
+                    <p className="text-xs text-gray-400 uppercase font-semibold">Total Due</p>
+                    <p className="font-bold text-blue-700">Rs. {totalDueAll.toLocaleString()}</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-xs text-gray-400 uppercase font-semibold">Total Paid</p>
+                    <p className="font-bold text-emerald-700">Rs. {totalPaidAll.toLocaleString()}</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-xs text-gray-400 uppercase font-semibold">Closing Balance</p>
+                    <p className={`font-extrabold ${closingBal > 0 ? 'text-red-600' : 'text-emerald-600'}`}>Rs. {closingBal.toLocaleString()}</p>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           {ledgerStudents.filter(s => fcls === 'All' || s.cls === fcls).map(stu => {
-            const stuPays  = [...(stuPayMap[stu.id] || [])].sort((a,b) => new Date(a.date)-new Date(b.date));
-            const due      = Number(classFees[stu.cls] || 0);
+            const stuPays    = [...(stuPayMap[stu.id] || [])].sort((a,b) => new Date(a.date)-new Date(b.date));
+            const due        = Number(classFees[stu.cls] || 0);
             if (stuPays.length === 0) return null;
             let running = 0;
+            const allTimePaidStu = stuPays.reduce((s,p)=>s+Number(p.amount),0);
+            const ob             = Number(stu.openingBalance || 0);
+            const disc           = paidMap[stu.id]?.totalDisc || 0;
+            const netDueStu      = Math.max(0, due - disc) + ob;
+            const balDue         = Math.max(0, netDueStu - allTimePaidStu);
+            const stuStatus      = getStatus(stu);
+            const isCleared      = balDue === 0;
             return (
               <Card key={stu.id} className="overflow-hidden mb-4">
-                <div className="px-5 py-3 bg-blue-50 border-b border-blue-100 flex flex-wrap items-center justify-between gap-2">
+                <div className={`px-5 py-3 border-b flex flex-wrap items-center justify-between gap-3 ${isCleared ? 'bg-emerald-50 border-emerald-100' : stuStatus==='partial' ? 'bg-amber-50 border-amber-100' : 'bg-red-50 border-red-100'}`}>
                   <div>
-                    <p className="font-bold text-blue-900">{stu.name}</p>
-                    <p className="text-xs text-blue-600">Class {stu.cls} | Roll: {stu.roll}{stu.family ? ` | ${stu.family}` : ''}</p>
+                    <p className={`font-bold text-base ${isCleared?'text-emerald-800':stuStatus==='partial'?'text-amber-800':'text-red-800'}`}>{stu.name}</p>
+                    <p className="text-xs text-gray-500">Class {stu.cls} | Roll: {stu.roll}{stu.family ? ` | ${stu.family}` : ''}</p>
                   </div>
-                  <div className="text-right text-sm">
-                    <span className="text-gray-500">Monthly Fee: </span>
-                    <span className="font-bold text-gray-800">Rs. {due.toLocaleString()}</span>
-                    <span className="mx-2 text-gray-300">|</span>
-                    <span className="text-gray-500">All-Time Paid: </span>
-                    <span className="font-bold text-emerald-700">Rs. {stuPays.reduce((s,p)=>s+Number(p.amount),0).toLocaleString()}</span>
+                  <div className="flex flex-wrap items-center gap-3 text-sm">
+                    <div className="text-center">
+                      <p className="text-xs text-gray-400 uppercase font-semibold">Monthly Fee</p>
+                      <p className="font-bold text-gray-700">Rs. {due.toLocaleString()}</p>
+                    </div>
+                    {ob > 0 && <div className="text-center">
+                      <p className="text-xs text-gray-400 uppercase font-semibold">Opening Bal</p>
+                      <p className="font-bold text-orange-600">Rs. {ob.toLocaleString()}</p>
+                    </div>}
+                    <div className="text-center">
+                      <p className="text-xs text-gray-400 uppercase font-semibold">All-Time Paid</p>
+                      <p className="font-bold text-emerald-700">Rs. {allTimePaidStu.toLocaleString()}</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-xs text-gray-400 uppercase font-semibold">Balance</p>
+                      <p className={`font-extrabold text-base ${isCleared?'text-emerald-600':'text-red-700'}`}>{isCleared ? '✓ Cleared' : `Rs. ${balDue.toLocaleString()}`}</p>
+                    </div>
+                    <div className="flex flex-col items-center gap-1">
+                      {stuStatus==='paid'    && <Badge color="green">✓ Paid</Badge>}
+                      {stuStatus==='partial' && <Badge color="orange">⏳ Partial</Badge>}
+                      {stuStatus==='unpaid'  && <Badge color="red">✗ Unpaid</Badge>}
+                    </div>
+                    {!isCleared && (
+                      <Btn variant="red" onClick={() => openCollect(stu)}>
+                        💳 Pay Rs. {balDue.toLocaleString()}
+                      </Btn>
+                    )}
                   </div>
                 </div>
                 <div className="overflow-x-auto">
@@ -3320,11 +3524,14 @@ function FeeCollection() {
             ? <Empty icon="👨‍👧‍👦" text="No families found. Make sure siblings share the same Family Name or Father's Name in student records." />
             : familyGroups.map(([familyKey, siblings]) => {
                 const totalOutstanding = siblings.reduce((s, stu) => {
-                  const due  = Number(classFees[stu.cls] || 0);
-                  const paid = paidMap[stu.id]?.total || 0;
-                  const disc = paidMap[stu.id]?.totalDisc || 0;
-                  const ob   = Number(stu.openingBalance || 0);
-                  return s + Math.max(0, due - disc + ob - paid);
+                  const due      = Number(classFees[stu.cls] || 0);
+                  const stuRate  = Number(stu.monthlyFee || 0);
+                  const autoDisc = stuRate > 0 && stuRate < due ? due - stuRate : 0;
+                  const atInfo   = allTimePaidMapFC[stu.id];
+                  const paid     = atInfo ? atInfo.total : 0;
+                  const disc     = atInfo ? Math.max(atInfo.totalDisc, autoDisc) : autoDisc;
+                  const ob       = Number(stu.openingBalance || 0);
+                  return s + Math.max(0, Math.max(0, due - disc) + ob - paid);
                 }, 0);
                 const allPaid = totalOutstanding === 0;
                 return (
@@ -3355,11 +3562,14 @@ function FeeCollection() {
                         </thead>
                         <tbody className="divide-y divide-gray-50">
                           {siblings.map(stu => {
-                            const due         = Number(classFees[stu.cls] || 0);
-                            const paid        = paidMap[stu.id]?.total || 0;
-                            const disc        = paidMap[stu.id]?.totalDisc || 0;
-                            const ob          = Number(stu.openingBalance || 0);
-                            const outstanding = Math.max(0, due - disc + ob - paid);
+                            const due      = Number(classFees[stu.cls] || 0);
+                            const stuRate  = Number(stu.monthlyFee || 0);
+                            const autoDisc = stuRate > 0 && stuRate < due ? due - stuRate : 0;
+                            const atInfo   = allTimePaidMapFC[stu.id];
+                            const paid     = atInfo ? atInfo.total : 0;
+                            const disc     = atInfo ? Math.max(atInfo.totalDisc, autoDisc) : autoDisc;
+                            const ob       = Number(stu.openingBalance || 0);
+                            const outstanding = Math.max(0, Math.max(0, due - disc) + ob - paid);
                             const st          = getStatus(stu);
                             return (
                               <tr key={stu.id} className="hover:bg-slate-50">
@@ -3672,7 +3882,7 @@ function FeeCollection() {
                   const paid = paidMap[stu.id]?.total || 0;
                   const disc = paidMap[stu.id]?.totalDisc || 0;
                   const ob   = Number(stu.openingBalance || 0);
-                  return s + Math.max(0, due - disc + ob - paid);
+                  return s + Math.max(0, Math.max(0, due - disc) + ob - paid);
                 }, 0);
                 const allPaid = totalOutstanding === 0;
                 return (
@@ -3709,7 +3919,7 @@ function FeeCollection() {
                             const paid        = paidMap[stu.id]?.total || 0;
                             const disc        = paidMap[stu.id]?.totalDisc || 0;
                             const ob          = Number(stu.openingBalance || 0);
-                            const outstanding = Math.max(0, due - disc + ob - paid);
+                            const outstanding = Math.max(0, Math.max(0, due - disc) + ob - paid);
                             const st          = getStatus(stu);
                             return (
                               <tr key={stu.id} className="hover:bg-slate-50">
@@ -3779,41 +3989,64 @@ function FeeCollection() {
             onChange={e => setFamilyForm({...familyForm, note: e.target.value})}
             placeholder="e.g. Monthly family payment"/>
           {/* Live Distribution Preview */}
-          {Number(familyForm.totalAmount) > 0 && (
-            <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 mb-4">
-              <p className="text-xs font-semibold text-gray-500 uppercase mb-2">📊 Auto Distribution Preview</p>
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-xs text-gray-400 uppercase">
-                    <th className="text-left pb-1">Student</th>
-                    <th className="text-right pb-1">Outstanding</th>
-                    <th className="text-right pb-1">Will Pay</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {splitPreview.map(r => (
-                    <tr key={r.stu.id} className="border-t border-gray-100">
-                      <td className="py-1 font-semibold text-gray-700">{r.stu.name} <span className="text-gray-400 font-normal text-xs">(Cls {r.stu.cls})</span></td>
-                      <td className="py-1 text-right text-red-500">Rs. {r.outstanding.toLocaleString()}</td>
-                      <td className={`py-1 text-right font-bold ${r.allocate > 0 ? 'text-emerald-700' : 'text-gray-300'}`}>
-                        {r.allocate > 0 ? `Rs. ${r.allocate.toLocaleString()}` : '—'}
-                      </td>
+          {(() => {
+            const totalOutst = splitPreview.reduce((s,r)=>s+r.outstanding,0);
+            const totalAlloc = splitPreview.reduce((s,r)=>s+r.allocate,0);
+            const entered    = Number(familyForm.totalAmount);
+            return (
+              <div className="bg-purple-50 border border-purple-200 rounded-xl p-3 mb-4">
+                {/* Family summary header */}
+                <div className="mb-2 pb-2 border-b border-purple-200">
+                  <p className="text-xs font-bold text-purple-700 uppercase">👨‍👧‍👦 {familyMod?.familyKey} — {familyMod?.siblings.length} children</p>
+                  <div className="flex flex-wrap gap-3 mt-1 text-xs">
+                    <span className="text-gray-600">Grand Due: <strong className="text-blue-700">Rs. {totalOutst.toLocaleString()}</strong></span>
+                    <span className="text-gray-600">Paid: <strong className="text-emerald-600">Rs. {splitPreview.reduce((s,r)=>s+r.paid,0).toLocaleString()}</strong></span>
+                    {entered > 0 && <span className="text-gray-600">Balance: <strong className="text-red-600">Rs. {Math.max(0, totalOutst - totalAlloc).toLocaleString()}</strong></span>}
+                    <span className="text-xs text-gray-400">Fee: Rs. {splitPreview.reduce((s,r)=>s+r.due,0).toLocaleString()}</span>
+                  </div>
+                </div>
+                <p className="text-xs font-semibold text-purple-600 uppercase mb-2">÷ Equal Split Preview</p>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-xs text-gray-500 font-semibold uppercase border-b border-purple-200">
+                      <th className="text-left pb-1">Child</th>
+                      <th className="text-right pb-1">Fee Due</th>
+                      <th className="text-right pb-1">Already Paid</th>
+                      <th className="text-right pb-1">Fee Share</th>
+                      <th className="text-right pb-1">Balance After</th>
                     </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr className="border-t-2 border-gray-300">
-                    <td className="pt-2 font-bold text-gray-700">Total</td>
-                    <td className="pt-2 text-right font-bold text-red-500">Rs. {splitPreview.reduce((s,r)=>s+r.outstanding,0).toLocaleString()}</td>
-                    <td className="pt-2 text-right font-extrabold text-emerald-700">Rs. {splitPreview.reduce((s,r)=>s+r.allocate,0).toLocaleString()}</td>
-                  </tr>
-                </tfoot>
-              </table>
-              {Number(familyForm.totalAmount) > splitPreview.reduce((s,r)=>s+r.outstanding,0) && (
-                <p className="text-xs text-amber-600 mt-2 font-semibold">⚠️ Amount exceeds total outstanding. Extra will not be recorded.</p>
-              )}
-            </div>
-          )}
+                  </thead>
+                  <tbody>
+                    {splitPreview.map(r => (
+                      <tr key={r.stu.id} className="border-t border-purple-100">
+                        <td className="py-1.5 font-semibold text-gray-800">{r.stu.name} <span className="text-gray-400 font-normal text-xs">(Cls {r.stu.cls})</span></td>
+                        <td className="py-1.5 text-right text-blue-700 font-semibold">Rs. {r.outstanding.toLocaleString()}</td>
+                        <td className="py-1.5 text-right text-emerald-600 font-semibold">Rs. {r.paid.toLocaleString()}</td>
+                        <td className={`py-1.5 text-right font-bold ${r.allocate > 0 ? 'text-purple-700' : 'text-gray-300'}`}>
+                          {r.allocate > 0 ? `Rs. ${r.allocate.toLocaleString()}` : '—'}
+                        </td>
+                        <td className={`py-1.5 text-right font-bold text-xs ${r.balAfter > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                          {r.balAfter > 0 ? `Rs. ${r.balAfter.toLocaleString()}` : entered > 0 ? '+Rs. ' + Math.abs(r.allocate - r.outstanding).toLocaleString() + ' Adv' : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="border-t-2 border-purple-300">
+                    <tr>
+                      <td className="pt-2 font-bold text-gray-700 text-xs">Total Collected:</td>
+                      <td className="pt-2 text-right font-bold text-blue-700 text-xs">Rs. {totalOutst.toLocaleString()}</td>
+                      <td className="pt-2 text-right font-bold text-emerald-600 text-xs">Rs. {splitPreview.reduce((s,r)=>s+r.paid,0).toLocaleString()}</td>
+                      <td className="pt-2 text-right font-extrabold text-purple-700">Rs. {totalAlloc.toLocaleString()}</td>
+                      <td className="pt-2 text-right font-bold text-red-600 text-xs">{totalAlloc > 0 && totalOutst > totalAlloc ? `Rs. ${(totalOutst-totalAlloc).toLocaleString()} left` : ''}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+                {entered > totalOutst && (
+                  <p className="text-xs text-amber-600 mt-2 font-semibold">⚠️ Amount exceeds total outstanding. Extra will not be recorded.</p>
+                )}
+              </div>
+            );
+          })()}
           <div className="flex gap-2">
             <Btn full variant="green" onClick={saveSplitPayment}>✅ Confirm & Save Split Payment</Btn>
             <Btn variant="outline" onClick={() => setFamilyMod(null)}>Cancel</Btn>
@@ -4039,43 +4272,60 @@ function FamilyLedger() {
   const [bpf, setBpf] = useState({ amount: '', paymentMethod: 'Cash', note: '' });
   const years = Array.from({ length: 5 }, (_, i) => NOW.getFullYear() - 2 + i);
 
+  // Group by familyId (primary) → family name (fallback). Each group: { key, label, fid }
   const families = useMemo(() => {
-    const unique = [...new Set(allStudents.map(s => s.family).filter(Boolean))];
-    return unique.sort((a, b) => {
-      const aFid = allStudents.find(s => s.family === a && s.familyId)?.familyId || '';
-      const bFid = allStudents.find(s => s.family === b && s.familyId)?.familyId || '';
-      const aNum = parseInt(aFid, 10);
-      const bNum = parseInt(bFid, 10);
-      if (!isNaN(aNum) && !isNaN(bNum)) return aNum - bNum;
-      return aFid.localeCompare(bFid) || a.localeCompare(b);
+    const groups = {};
+    allStudents.forEach(s => {
+      const fid   = (s.familyId || '').trim();
+      const fname = (s.family   || '').trim();
+      const key   = fid || fname;
+      if (!key) return;
+      if (!groups[key]) groups[key] = { key, label: fname || fid, fid };
+      if (fname) groups[key].label = fname; // prefer family name as display label
+    });
+    return Object.values(groups).sort((a, b) => {
+      const an = parseInt(a.fid || a.key, 10);
+      const bn = parseInt(b.fid || b.key, 10);
+      if (!isNaN(an) && !isNaN(bn)) return an - bn;
+      return (a.fid || a.key).localeCompare(b.fid || b.key) || a.label.localeCompare(b.label);
     });
   }, [allStudents]);
 
-  // Sr. number map: family name → sequential number (1-based, stable across search)
+  // Sr. number map: group.key → sequential number (1-based, stable across search)
   const familySrMap = useMemo(() => {
     const map = {};
-    families.forEach((f, i) => { map[f] = i + 1; });
+    families.forEach((g, i) => { map[g.key] = i + 1; });
     return map;
   }, [families]);
 
-  // Search: find matching family by Sr. No, Family ID, Student Name, or Father Name
+  // Search: find matching family by Sr. No, Family ID, label, Student Name, Father Name
   const filteredFamilies = useMemo(() => {
     if (!searchQ.trim()) return families;
     const q = searchQ.trim().toLowerCase();
-    return families.filter(f => {
-      const sibs = allStudents.filter(s => s.family === f);
-      const sr   = String(familySrMap[f] || '');
+    return families.filter(g => {
+      const sibs = allStudents.filter(s => g.fid ? (s.familyId||'').trim() === g.fid : s.family === g.key);
+      const sr   = String(familySrMap[g.key] || '');
       return (
         sr === q.replace(/^0+/, '') ||
-        f.toLowerCase().includes(q) ||
-        sibs.some(s => (s.familyId||'').toLowerCase().includes(q)) ||
+        g.label.toLowerCase().includes(q) ||
+        g.fid.toLowerCase().includes(q) ||
         sibs.some(s => (s.name||'').toLowerCase().includes(q)) ||
         sibs.some(s => (s.father||'').toLowerCase().includes(q))
       );
     });
-  }, [searchQ, families, allStudents]);
+  }, [searchQ, families, allStudents, familySrMap]);
 
-  const familyStudents = useMemo(() => selFamily ? allStudents.filter(s => s.family === selFamily) : [], [allStudents, selFamily]);
+  // All siblings in the selected group (matched by familyId if available, else family name)
+  const familyStudents = useMemo(() => {
+    if (!selFamily) return [];
+    const group = families.find(g => g.key === selFamily);
+    if (!group) return [];
+    if (group.fid) return allStudents.filter(s => (s.familyId||'').trim() === group.fid);
+    return allStudents.filter(s => s.family === selFamily);
+  }, [allStudents, selFamily, families]);
+
+  // Display label for the currently selected family
+  const selFamilyLabel = families.find(g => g.key === selFamily)?.label || selFamily;
 
   // All payments for this family ever
   const familyPayments = useMemo(() => {
@@ -4255,7 +4505,7 @@ function FamilyLedger() {
       <div class="meta">
         <div><div class="label">Family Receipt</div><div class="value">${famRcpt}</div></div>
         <div><div class="label">Date</div><div class="value">${new Date().toLocaleDateString('en-PK')}</div></div>
-        <div><div class="label">Family</div><div class="value" style="color:#6d28d9;font-weight:700">${selFamily}</div></div>
+        <div><div class="label">Family</div><div class="value" style="color:#6d28d9;font-weight:700">${selFamilyLabel}</div></div>
         <div><div class="label">Month</div><div class="value">${MONTHS[Number(pays[0]?.month)]} ${pays[0]?.year}</div></div>
         <div><div class="label">Children</div><div class="value">${n}</div></div>
         <div><div class="label">Payment Method</div><div class="value">${pays[0]?.paymentMethod||'Cash'}</div></div>
@@ -4362,8 +4612,8 @@ function FamilyLedger() {
       const s = allStudents.find(x=>x.id===p.stuId);
       return `<tr><td>${p.rcpt}</td><td>${s?.name||'—'}</td><td>${MONTHS[p.month]} ${p.year}</td><td style="text-align:right">Rs. ${Number(p.amount).toLocaleString()}</td><td>${p.paymentMethod||'Cash'}</td><td>${new Date(p.date).toLocaleDateString('en-PK')}</td></tr>`;
     }).join('');
-    printPage(`Family Ledger — ${selFamily}`, `
-      <h2>Family Ledger — ${selFamily} &nbsp;|&nbsp; ${MONTHS[vm]} ${vy}</h2>
+    printPage(`Family Ledger — ${selFamilyLabel}`, `
+      <h2>Family Ledger — ${selFamilyLabel} &nbsp;|&nbsp; ${MONTHS[vm]} ${vy}</h2>
       <div class="summary">
         <div class="sum-card"><div class="val">${familyStudents.length}</div><div class="lbl">Children</div></div>
         <div class="sum-card"><div class="val">Rs. ${totalDue.toLocaleString()}</div><div class="lbl">Total Due</div></div>
@@ -4401,7 +4651,7 @@ function FamilyLedger() {
     }).join('');
     const grandTotal = familyStudents.reduce((s,stu)=>s+getBooksForStu(stu).reduce((t,b)=>t+Number(b.qty)*Number(b.price),0),0);
     const win = window.open('', '_blank', 'width=900,height=700');
-    win.document.write(`<!DOCTYPE html><html><head><title>Book Requirements — ${selFamily}</title>
+    win.document.write(`<!DOCTYPE html><html><head><title>Book Requirements — ${selFamilyLabel}</title>
       <style>*{box-sizing:border-box}body{font-family:'Segoe UI',Arial,sans-serif;padding:28px;color:#1a1a1a;font-size:12px}
       table{width:100%;border-collapse:collapse}th{background:#1e3a8a;color:#fff;padding:7px 10px;text-align:left;font-size:11px;text-transform:uppercase}
       td{padding:6px 10px;border-bottom:1px solid #e5e7eb}tr:nth-child(even) td{background:#f8fafc}tfoot td{background:#f1f5f9;font-weight:700}
@@ -4410,7 +4660,7 @@ function FamilyLedger() {
       @media print{body{padding:14px}button{display:none!important}}</style></head><body>
       <div class="school-hdr"><h1 style="margin:0;font-size:20px;color:#1e3a8a;font-weight:800">Discovery International School System</h1>
       <p style="margin:4px 0 0;font-size:11px;color:#6b7280">Wagha Road, Jallo More, Lahore | +92 (322) 8555566</p></div>
-      <h2 style="color:#6d28d9;margin:0 0 16px">📚 Book Requirements — ${selFamily}</h2>
+      <h2 style="color:#6d28d9;margin:0 0 16px">📚 Book Requirements — ${selFamilyLabel}</h2>
       ${sections}
       <div class="grand">Grand Total (All Children): Rs. ${grandTotal.toLocaleString()}</div>
       <script>window.onload=function(){window.print();}<\/script></body></html>`);
@@ -4465,15 +4715,14 @@ function FamilyLedger() {
 
           <div className="flex flex-wrap gap-2 mb-4">
             {filteredFamilies.length === 0 && <p className="text-sm text-gray-400 italic">No families match your search.</p>}
-            {filteredFamilies.map(f => {
-              const fid = allStudents.find(s => s.family === f && s.familyId)?.familyId;
-              const sr  = familySrMap[f] || '';
+            {filteredFamilies.map(g => {
+              const sr = familySrMap[g.key] || '';
               return (
-                <button key={f} onClick={() => { setSelFamily(f); setSearchQ(''); }}
-                  className={`px-3 py-2 rounded-xl text-sm font-bold border-2 transition-all flex items-center gap-2 ${selFamily===f?'bg-purple-600 border-purple-600 text-white shadow':'bg-white border-gray-200 text-gray-600 hover:border-purple-400'}`}>
-                  <span className={`text-xs font-extrabold px-1.5 py-0.5 rounded-lg ${selFamily===f?'bg-white/20 text-white':'bg-purple-100 text-purple-700'}`}>{String(sr).padStart(2,'0')}</span>
-                  👨‍👩‍👧‍👦 {f}
-                  {fid ? <span className="text-xs opacity-60">{fid}</span> : ''}
+                <button key={g.key} onClick={() => { setSelFamily(g.key); setSearchQ(''); }}
+                  className={`px-3 py-2 rounded-xl text-sm font-bold border-2 transition-all flex items-center gap-2 ${selFamily===g.key?'bg-purple-600 border-purple-600 text-white shadow':'bg-white border-gray-200 text-gray-600 hover:border-purple-400'}`}>
+                  <span className={`text-xs font-extrabold px-1.5 py-0.5 rounded-lg ${selFamily===g.key?'bg-white/20 text-white':'bg-purple-100 text-purple-700'}`}>{String(sr).padStart(2,'0')}</span>
+                  👨‍👩‍👧‍👦 {g.label}
+                  {g.fid ? <span className="text-xs opacity-60">{g.fid}</span> : ''}
                 </button>
               );
             })}
@@ -4503,31 +4752,9 @@ function FamilyLedger() {
                     <Btn variant="purple" onClick={openSplitPay}>÷ Pay Family (Equal Split)</Btn>
                   </div>
 
-                  {/* Family summary cards */}
-                  <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
-                    <Card className="p-4 border-purple-100">
-                      <p className="text-xs text-gray-400 font-semibold uppercase mb-1">Children</p>
-                      <p className="text-2xl font-bold text-purple-700">{familyStudents.length}</p>
-                    </Card>
-                    <Card className="p-4 border-orange-100">
-                      <p className="text-xs text-gray-400 font-semibold uppercase mb-1">Opening Balance</p>
-                      <p className="text-lg font-bold text-orange-600">Rs. {totalOpeningBalance.toLocaleString()}</p>
-                      <p className="text-xs text-gray-400 mt-0.5">prev. dues carried</p>
-                    </Card>
-                    <Card className="p-4 border-blue-100">
-                      <p className="text-xs text-gray-400 font-semibold uppercase mb-1">Monthly Due</p>
-                      <p className="text-lg font-bold text-blue-700">Rs. {totalActualMonthlyDue.toLocaleString()}</p>
-                      {totalDiscount > 0 && <p className="text-xs text-emerald-600 mt-0.5">−Rs. {totalDiscount.toLocaleString()} discount</p>}
-                    </Card>
-                    <Card className="p-4 border-emerald-100">
-                      <p className="text-xs text-gray-400 font-semibold uppercase mb-1">All-Time Paid</p>
-                      <p className="text-lg font-bold text-emerald-700">Rs. {allTimePaid.toLocaleString()}</p>
-                    </Card>
-                    <Card className={`p-4 ${netOutstanding>0?'border-red-200 bg-red-50':'border-emerald-100'}`}>
-                      <p className="text-xs text-gray-400 font-semibold uppercase mb-1">Net Outstanding</p>
-                      <p className={`text-xl font-extrabold ${netOutstanding>0?'text-red-600':'text-emerald-600'}`}>{netOutstanding>0?`Rs. ${netOutstanding.toLocaleString()}`:'✓ Cleared'}</p>
-                      <p className="text-xs text-gray-400 mt-0.5">opening + monthly − paid</p>
-                    </Card>
+                  {/* Family summary — children count only */}
+                  <div className="flex items-center gap-3 mb-4">
+                    <span className="bg-purple-100 text-purple-700 font-bold px-4 py-2 rounded-xl text-sm">👨‍👩‍👧‍👦 {familyStudents.length} Children</span>
                   </div>
 
                   {/* Combined Family Calculation Box */}
@@ -4845,9 +5072,9 @@ function FamilyLedger() {
 
       {/* ── Equal Split Payment Modal ── */}
       {splitMod && (
-        <Modal title={`÷ Family Payment — ${selFamily}`} onClose={() => setSplitMod(false)} wide>
+        <Modal title={`÷ Family Payment — ${selFamilyLabel}`} onClose={() => setSplitMod(false)} wide>
           <div className="bg-purple-50 rounded-xl p-3 mb-4">
-            <p className="font-semibold text-purple-800">{selFamily} — {familyStudents.length} children</p>
+            <p className="font-semibold text-purple-800">{selFamilyLabel} — {familyStudents.length} children</p>
             <div className="flex flex-wrap gap-4 mt-1 text-sm">
               <span className="text-gray-600">Grand Due: <strong>Rs. {grandTotalDue.toLocaleString()}</strong></span>
               <span className="text-gray-600">Paid: <strong className="text-emerald-700">Rs. {grandTotalPaid.toLocaleString()}</strong></span>
@@ -7219,7 +7446,7 @@ function CashBook() {
     // Compute opening balance per day per account:
     // opening = acctBalance of first entry of that day minus its own effect
     const result = [];
-    Object.keys(groups).sort().forEach(date => {
+    Object.keys(groups).sort().reverse().forEach(date => {
       const dayEntries = groups[date];
       // Opening balance for this day = balance before the first entry of the day (per account or combined)
       // For combined ledger view: sum of per-account balances before this day
@@ -8028,8 +8255,8 @@ function SecuritySettings() {
 const NAV_ALL = [
   { id:'dashboard',   label:'Dashboard',           icon:'🏠',  roles:['admin','staff','principal'] },
   { id:'students',    label:'Students',            icon:'👨‍🎓', roles:['admin','staff','principal'] },
-  { id:'feecollect',  label:'Fee Collection',      icon:'💰',  roles:['admin','staff','principal'] },
-  { id:'fees',        label:'Student Ledger',      icon:'📒',  roles:['admin','staff','principal'] },
+  { id:'feecollect',  label:'Student Ledger',      icon:'📒',  roles:['admin','staff','principal'] },
+  { id:'fees',        label:'Fee Collection',      icon:'💰',  roles:['admin','staff','principal'] },
   { id:'inventory',   label:'Inventory',           icon:'📦',  roles:['admin','staff','principal'] },
   { id:'expenses',    label:'Expenses',            icon:'🧾',  roles:['admin','staff','principal'] },
   { id:'family',      label:'Family Ledger',       icon:'👨‍👩‍👧‍👦', roles:['admin','staff','principal'] },
