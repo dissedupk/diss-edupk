@@ -977,6 +977,18 @@ function Dashboard({ setPage }) {
   const allExpenses  = expenses.reduce((s, e) => s + Number(e.amount || 0), 0);
   const spays        = S.get(K.SPAY, []);
   const totalSalaryPaid = spays.reduce((s, p) => s + Number(p.amount || 0), 0);
+
+  // ── Expense Heads from Cash Book (single source of truth) ──
+  const dashCbAll   = S.get(K.CBOOK, []);
+  const dashCbExp   = dashCbAll.filter(e => e.type === 'expense');
+  const cbVendorPaidH  = dashCbExp.filter(e => e.refType === 'vendor').reduce((s,e)=>s+Number(e.amount||0),0);
+  const cbSalariesH    = dashCbExp.filter(e => e.refType !== 'vendor' && /^salary\b/i.test(e.description||'') && !/guard|sweep/i.test(e.description||'')).reduce((s,e)=>s+Number(e.amount||0),0);
+  const cbGuardH       = dashCbExp.filter(e => /guard/i.test(e.description||'')).reduce((s,e)=>s+Number(e.amount||0),0);
+  const cbSweeperH     = dashCbExp.filter(e => /sweep/i.test(e.description||'')).reduce((s,e)=>s+Number(e.amount||0),0);
+  const cbRentH        = dashCbExp.filter(e => e.refType !== 'vendor' && /rent/i.test(e.description||'')).reduce((s,e)=>s+Number(e.amount||0),0);
+  const cbGeneralH     = dashCbExp.filter(e => e.refType !== 'vendor' && !/^salary\b/i.test(e.description||'') && !/guard|sweep|rent/i.test(e.description||'')).reduce((s,e)=>s+Number(e.amount||0),0);
+  const cbTotalExpH    = dashCbExp.reduce((s,e)=>s+Number(e.amount||0),0);
+
   // Cash In Hand = student income - expenses (salary shown separately as info, not deducted)
   const cashInHand = totalStudentIncome - allExpenses;
   const lowStock   = inventory.filter(i => Number(i.qty) <= Number(i.threshold || 5));
@@ -1041,7 +1053,7 @@ function Dashboard({ setPage }) {
   const netPayableVendors   = Math.max(0, totalVendorSupplied - totalVendorPaid);
 
   // ── Tier 2: Operational expense heads ──
-  const totalAllOut = allExpenses + totalSalaryPaid + totalVendorPaid;
+  const totalAllOut = cbTotalExpH;
   const netPosition = totalStudentIncome - totalAllOut;
 
   // ── Tier 3: Account Wallets real-time balances ──
@@ -1241,18 +1253,45 @@ function Dashboard({ setPage }) {
         <div className="bg-red-50 border-2 border-red-200 rounded-2xl p-4">
           <p className="text-xs font-bold text-red-600 uppercase tracking-widest mb-3">🧾 Expense Heads</p>
           <div className="space-y-2.5 text-sm">
-            <div className="flex justify-between items-center">
-              <span className="text-gray-500">🧾 Daily Expenses</span>
-              <span className="font-bold text-red-600">Rs. {allExpenses.toLocaleString()}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-gray-500">🏪 Vendor Debit</span>
-              <span className="font-bold text-orange-600">Rs. {totalVendorPaid.toLocaleString()}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-gray-500">👩‍🏫 Salaries</span>
-              <span className="font-bold text-red-500">Rs. {totalSalaryPaid.toLocaleString()}</span>
-            </div>
+            {cbGeneralH > 0 && (
+              <div className="flex justify-between items-center">
+                <span className="text-gray-500">🧾 General</span>
+                <span className="font-bold text-red-600">Rs. {cbGeneralH.toLocaleString()}</span>
+              </div>
+            )}
+            {cbRentH > 0 && (
+              <div className="flex justify-between items-center">
+                <span className="text-gray-500">🏠 Rent</span>
+                <span className="font-bold text-red-600">Rs. {cbRentH.toLocaleString()}</span>
+              </div>
+            )}
+            {cbSalariesH > 0 && (
+              <div className="flex justify-between items-center">
+                <span className="text-gray-500">👩‍🏫 Salaries</span>
+                <span className="font-bold text-red-500">Rs. {cbSalariesH.toLocaleString()}</span>
+              </div>
+            )}
+            {cbVendorPaidH > 0 && (
+              <div className="flex justify-between items-center">
+                <span className="text-gray-500">🏪 Vendor Payment</span>
+                <span className="font-bold text-orange-600">Rs. {cbVendorPaidH.toLocaleString()}</span>
+              </div>
+            )}
+            {cbGuardH > 0 && (
+              <div className="flex justify-between items-center">
+                <span className="text-gray-500">💂 Guard</span>
+                <span className="font-bold text-red-500">Rs. {cbGuardH.toLocaleString()}</span>
+              </div>
+            )}
+            {cbSweeperH > 0 && (
+              <div className="flex justify-between items-center">
+                <span className="text-gray-500">🧹 Sweeper</span>
+                <span className="font-bold text-red-500">Rs. {cbSweeperH.toLocaleString()}</span>
+              </div>
+            )}
+            {cbTotalExpH === 0 && (
+              <div className="text-center text-gray-400 text-xs py-2">No expenses recorded</div>
+            )}
             <div className="border-t-2 border-red-200 pt-2 flex justify-between items-center">
               <span className="font-bold text-gray-700">Total Out</span>
               <span className="font-extrabold text-red-600 text-base">Rs. {totalAllOut.toLocaleString()}</span>
