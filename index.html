@@ -16,6 +16,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
   <script>
     const firebaseConfig = {
       apiKey: "AIzaSyBnTYP1Jkpath8qxpEPOuXLe9VCgovHAH0",
@@ -30,6 +31,8 @@
     firebase.initializeApp(firebaseConfig);
     window._fbDB = firebase.database();
     window._sessionId = Math.random().toString(36).slice(2);
+    // Sign in anonymously so database rules can require auth != null
+    firebase.auth().signInAnonymously().catch(e => console.warn('Anon auth failed:', e));
   </script>
   <style>
     body { font-family: 'Segoe UI', Arial, sans-serif; }
@@ -121,7 +124,7 @@ window.closeMasterCode = function() {
 </script>
 
 <script type="text/babel">
-const { useState, useMemo } = React;
+const { useState, useMemo, useEffect } = React;
 
 // ── Storage ──────────────────────────────────────────────────────────────────
 const S = {
@@ -533,6 +536,26 @@ function LoginScreen({ onLogin }) {
 // ── PARENT PORTAL ────────────────────────────────────────────────────────────
 function ParentPortal({ currentUser, onLogout }) {
   const [tab, setTab] = useState('fee');
+  const [tick, setTick] = useState(0);
+
+  // ── Firebase real-time listeners — keep parent data live ──
+  useEffect(() => {
+    if (!window._fbDB) return;
+    const keys = [K.STU, K.CF, K.PAY, K.NOTIF, K.COMP];
+    const refs = keys.map(k => {
+      const ref = window._fbDB.ref('sms/' + k);
+      ref.on('value', snap => {
+        const val = snap.val();
+        if (val !== null && val !== undefined) {
+          localStorage.setItem(k, JSON.stringify(val));
+          setTick(t => t + 1);
+        }
+      });
+      return ref;
+    });
+    return () => refs.forEach(r => r.off('value'));
+  }, []);
+
   const familyId = currentUser.familyId || '';
   const students  = S.get(K.STU, []).filter(s => s.familyId && s.familyId.trim() === familyId.trim());
   const classFees = S.get(K.CF, {});
@@ -572,7 +595,10 @@ function ParentPortal({ currentUser, onLogout }) {
 
   // ── Fee calculations per student ──
   const feeData = students.map(s => {
-    const fee = Number(classFees[s.cls] || 0);
+    const classFee  = Number(classFees[s.cls] || 0);
+    const customFee = Number(s.monthlyFee || 0);
+    const discount  = customFee > 0 && customFee < classFee ? classFee - customFee : 0;
+    const fee       = customFee > 0 ? customFee : classFee;
     const allPays = payments.filter(p => p.stuId === s.id);
     const curMonthPays = allPays.filter(p => p.month === curM && p.year === curY);
     const paidThisMonth = curMonthPays.reduce((t, p) => t + Number(p.amount || 0), 0);
@@ -581,7 +607,7 @@ function ParentPortal({ currentUser, onLogout }) {
     const afPaid    = allPays.reduce((t, p) => t + Number(p.annualFund || 0), 0);
     const afDue     = Number(s.annualFund || 0);
     const afBalance = Math.max(0, afDue - afPaid);
-    return { s, fee, paidThisMonth, lastPay, totalPaid, afBalance };
+    return { s, fee, discount, classFee, paidThisMonth, lastPay, totalPaid, afBalance };
   });
 
   // ── Notifications for this family's classes ──
@@ -633,7 +659,7 @@ function ParentPortal({ currentUser, onLogout }) {
           <div className="space-y-4">
             <h2 className="text-base font-bold text-gray-800">Fee Status — {MONTHS[curM]} {curY}</h2>
             {feeData.length === 0 && <p className="text-gray-500 text-sm">No student records found.</p>}
-            {feeData.map(({ s, fee, paidThisMonth, lastPay, totalPaid, afBalance }) => {
+            {feeData.map(({ s, fee, discount, classFee, paidThisMonth, lastPay, totalPaid, afBalance }) => {
               const unpaid = Math.max(0, fee - paidThisMonth);
               const isPaid = fee > 0 && paidThisMonth >= fee;
               return (
@@ -656,6 +682,7 @@ function ParentPortal({ currentUser, onLogout }) {
                     <div className="bg-blue-50 rounded-xl p-3">
                       <p className="text-xs text-blue-600 font-semibold uppercase tracking-wide">Monthly Fee</p>
                       <p className="text-base font-bold text-blue-800 mt-0.5">Rs. {fee.toLocaleString()}</p>
+                      {discount > 0 && <p className="text-xs text-green-600 mt-0.5">Discount: Rs. {discount.toLocaleString()}</p>}
                     </div>
                     <div className={`rounded-xl p-3 ${isPaid ? 'bg-green-50' : 'bg-red-50'}`}>
                       <p className={`text-xs font-semibold uppercase tracking-wide ${isPaid ? 'text-green-600' : 'text-red-600'}`}>This Month</p>
@@ -1070,12 +1097,10 @@ function Dashboard({ setPage }) {
 
   const stats = [
     { label: 'Total Students',   value: students.length,                        icon: '👨‍🎓', color: 'blue',   pg: 'students'   },
-    { label: 'Fee Collected',    value: `Rs. ${collected.toLocaleString()}`,    icon: '💰', color: 'green',  pg: 'fees'       },
+    { label: 'Fee Collected',    value: `Rs. ${collected.toLocaleString()}`,    icon: '💰', color: 'green',  pg: 'feecollect' },
     { label: 'Daily Expenses',   value: `Rs. ${totalExp.toLocaleString()}`,     icon: '🧾', color: 'red',    pg: 'expenses'   },
-    { label: 'Net Balance',      value: `Rs. ${netBalance.toLocaleString()}`,   icon: '📊', color: netBalance >= 0 ? 'green' : 'red', pg: 'fees' },
     { label: 'Annual Fund',      value: `Rs. ${annualFundTotal.toLocaleString()}`, subValue: annualFundExpected > 0 ? `of Rs. ${annualFundExpected.toLocaleString()}` : null, icon: '🏦', color: 'purple', pg: 'fees' },
     { label: 'Low Stock Items',  value: lowStock.length,                        icon: '📦', color: 'yellow', pg: 'inventory'  },
-    { label: 'Outstanding Dues', value: `Rs. ${totalDue.toLocaleString()}`,     subValue: `${outstandingCount} student${outstandingCount!==1?'s':''}`, icon: '⚠️', color: 'red', pg: 'feecollect' },
     { label: 'Total Balance Due', value: `Rs. ${totalDue.toLocaleString()}`,   subValue: `incl. opening bal Rs.${totalOpeningBalAll.toLocaleString()}`, icon: '⚖️', color: 'red', pg: 'feecollect' },
     { label: 'Cash In Hand',     value: `Rs. ${cashInHand.toLocaleString()}`,   icon: '💵', color: cashInHand >= 0 ? 'green' : 'red', pg: 'cashbook' },
     { label: 'Total Demand',     value: `Rs. ${totalDemand.toLocaleString()}`,  subValue: `Fee Rs.${totalMonthlyFee.toLocaleString()} + AF Rs.${totalAnnualFund.toLocaleString()} + Books Rs.${totalBooksValue.toLocaleString()}`, icon: '📋', color: 'blue', pg: 'feecollect' },
@@ -2375,17 +2400,33 @@ function Fees() {
   const status = useMemo(() => {
     const paid = {};
     payments.filter(p => p.month === vm && p.year === vy).forEach(p => { paid[p.stuId] = p; });
-    return students.map(s => ({ stu: s, pay: paid[s.id] || null, due: classFees[s.cls] || 0 }));
+    return students.map(s => {
+      const cf       = Number(classFees[s.cls] || 0);
+      const sr       = Number(s.monthlyFee || 0);
+      const autoDisc = sr > 0 && sr < cf ? cf - sr : 0;
+      return { stu: s, pay: paid[s.id] || null, due: cf, autoDisc };
+    });
   }, [students, payments, classFees, vm, vy]);
 
   const histPays = histStu ? [...payments.filter(p => p.stuId === histStu)].reverse() : [];
   const histStuObj = students.find(s => s.id === histStu);
 
   const printReceipt = (pay, stu) => {
-    const win = window.open('', '_blank', 'width=420,height=660');
+    // Calculate closing balance
+    const allPays = S.get(K.PAY, []);
+    const classFee = Number(classFees[stu.cls] || 0);
+    const ob = Number(stu.openingBalance || 0);
+    const stuMonthPays = allPays.filter(p => p.stuId === stu.id && p.month === pay.month && p.year === pay.year);
+    const totalPaidThisMonth = stuMonthPays.reduce((s, p) => s + Number(p.amount || 0), 0);
+    const totalDiscThisMonth = stuMonthPays.reduce((s, p) => s + Number(p.discount || 0), 0);
+    const netDue = Math.max(0, classFee - totalDiscThisMonth) + ob;
+    const closingBal = Math.max(0, netDue - totalPaidThisMonth);
+    const isFullyPaid = closingBal === 0;
+
+    const win = window.open('', '_blank', 'width=420,height=700');
     win.document.write(`<!DOCTYPE html><html><head><title>Fee Receipt</title>
       <style>
-        body{font-family:'Segoe UI',Arial,sans-serif;padding:26px;max-width:380px;margin:0 auto;color:#1a1a1a}
+        body{font-family:'Segoe UI',Arial,sans-serif;padding:26px;max-width:380px;margin:0 auto;color:#1a1a1a;position:relative}
         .logo-hdr{text-align:center;margin-bottom:10px;padding-bottom:10px;border-bottom:2px solid #c0392b}
         .logo-hdr img{height:60px;object-fit:contain}
         h2{text-align:center;color:#c0392b;margin:6px 0 2px;font-size:16px;font-weight:800;letter-spacing:1px}
@@ -2396,10 +2437,13 @@ function Fees() {
         .total{display:flex;justify-content:space-between;align-items:center;background:#f0fdf4;padding:10px 14px;border-radius:8px;margin:10px 0}
         .total-label{font-size:13px;font-weight:700;color:#15803d}
         .total-val{font-size:20px;font-weight:800;color:#15803d}
+        .closing{display:flex;justify-content:space-between;align-items:center;padding:8px 14px;border-radius:8px;margin:6px 0;font-size:13px;font-weight:700;}
         .footer{text-align:center;font-size:10px;color:#9ca3af;margin-top:10px}
         .dev-footer{text-align:center;margin-top:14px;padding-top:8px;border-top:1px solid #e5e7eb;font-size:8px;color:#9ca3af;letter-spacing:.3px}
-        @media print{body{padding:10px}button{display:none!important}}
+        .paid-stamp{position:fixed;top:50%;right:20px;transform:translateY(-50%) rotate(-25deg);border:5px solid #15803d;color:#15803d;font-size:42px;font-weight:900;padding:6px 16px;border-radius:8px;opacity:0.18;letter-spacing:4px;pointer-events:none;user-select:none}
+        @media print{body{padding:10px}button{display:none!important}.paid-stamp{position:fixed;top:50%;right:20px}}
       </style></head><body>
+      ${isFullyPaid ? '<div class="paid-stamp">PAID</div>' : ''}
       <div class="logo-hdr"><img src="${LOGO_SRC}" alt="DISS" onerror="this.style.display='none'"/></div>
       <h2>FEE RECEIPT</h2>
       <hr class="divider"/>
@@ -2415,15 +2459,19 @@ function Fees() {
       </div>
       <hr class="divider"/>
       <div style="margin-bottom:8px">
-        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:#6b7280">Monthly Fee</span><span style="font-weight:600">Rs. ${(Number(pay.amount)+Number(pay.discount||0)).toLocaleString()}</span></div>
-        ${pay.discount > 0 ? `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px;color:#dc2626"><span>Discount</span><span style="font-weight:600">- Rs. ${Number(pay.discount).toLocaleString()}</span></div>` : ''}
-        ${pay.discount > 0 ? `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px;border-top:1px solid #e5e7eb"><span style="color:#6b7280">Net Fee</span><span style="font-weight:700">Rs. ${Number(pay.amount).toLocaleString()}</span></div>` : ''}
+        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:#6b7280">Monthly Fee</span><span style="font-weight:600">Rs. ${classFee.toLocaleString()}</span></div>
+        ${totalDiscThisMonth > 0 ? `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px;color:#dc2626"><span>Discount</span><span style="font-weight:600">- Rs. ${totalDiscThisMonth.toLocaleString()}</span></div>` : ''}
+        ${ob > 0 ? `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px;color:#d97706"><span>Opening Balance (prev dues)</span><span style="font-weight:600">+ Rs. ${ob.toLocaleString()}</span></div>` : ''}
+        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px;border-top:1px solid #e5e7eb"><span style="color:#6b7280">Net Due</span><span style="font-weight:700">Rs. ${netDue.toLocaleString()}</span></div>
         ${pay.annualFund ? `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:#6b7280">Annual Fund</span><span style="font-weight:600">Rs. ${Number(pay.annualFund).toLocaleString()}</span></div>` : ''}
       </div>
-      ${pay.discount > 0 ? `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:4px 10px;font-size:11px;color:#dc2626;font-weight:700;text-align:center;margin-bottom:8px">✓ Discount Applied: Rs. ${Number(pay.discount).toLocaleString()}</div>` : ''}
       <div class="total">
-        <span class="total-label">Total Paid</span>
+        <span class="total-label">Amount Received</span>
         <span class="total-val">Rs. ${(Number(pay.amount) + Number(pay.annualFund||0)).toLocaleString()}</span>
+      </div>
+      <div class="closing" style="background:${isFullyPaid?'#f0fdf4':'#fef2f2'};color:${isFullyPaid?'#15803d':'#dc2626'}">
+        <span>Closing Balance</span>
+        <span style="font-size:16px">Rs. ${closingBal.toLocaleString()} ${isFullyPaid?'✅ CLEARED':''}</span>
       </div>
       ${pay.note ? `<p style="font-size:11px;color:#6b7280">Note: ${pay.note}</p>` : ''}
       <hr class="divider"/>
@@ -2435,7 +2483,7 @@ function Fees() {
   };
 
   const printFees = () => {
-    const rows = status.map((r,i) => `<tr><td>${i+1}</td><td><b>${r.stu.name}</b></td><td>${r.stu.father||'—'}</td><td>${r.stu.cls}</td><td>${r.stu.roll}</td><td>Rs. ${Number(r.due).toLocaleString()}</td><td><span class="badge ${r.pay?'b-green':'b-red'}">${r.pay?'Paid Rs.'+Number(r.pay.amount).toLocaleString():'Unpaid'}</span></td></tr>`).join('');
+    const rows = status.map((r,i) => { const disc=Number(r.pay?.discount||0)||r.autoDisc||0; const netDue=Math.max(0,Number(r.due)-disc); return `<tr><td>${i+1}</td><td><b>${r.stu.name}</b></td><td>${r.stu.father||'—'}</td><td>${r.stu.cls}</td><td>${r.stu.roll}</td><td>Rs. ${netDue.toLocaleString()}${disc>0?` <small style="color:#dc2626">(disc Rs.${disc.toLocaleString()})</small>`:''}</td><td><span class="badge ${r.pay?'b-green':'b-red'}">${r.pay?'Paid Rs.'+Number(r.pay.amount).toLocaleString():'Unpaid'}</span></td></tr>`; }).join('');
     const paid = status.filter(r=>r.pay).length;
     printPage(`Fee Status — ${MONTHS[vm]} ${vy}`, `
       <h2>Fee Status — ${MONTHS[vm]} ${vy}</h2>
@@ -2483,16 +2531,17 @@ function Fees() {
             : (() => {
                 // ── Totals for this month ──
                 const totalFeeDue      = status.reduce((s, r) => s + Number(r.due || 0), 0);
-                const totalDiscount    = status.reduce((s, r) => s + Number(r.pay?.discount || 0), 0);
-                const totalNetDue      = status.reduce((s, r) => s + Math.max(0, Number(r.due||0) - Number(r.pay?.discount||0)), 0);
+                const totalDiscount    = status.reduce((s, r) => s + (Number(r.pay?.discount || 0) || r.autoDisc || 0), 0);
+                const totalNetDue      = status.reduce((s, r) => { const disc = Number(r.pay?.discount||0) || r.autoDisc||0; return s + Math.max(0, Number(r.due||0) - disc); }, 0);
                 const totalCollected   = status.reduce((s, r) => s + Number(r.pay?.amount || 0), 0);
                 const totalAF          = status.reduce((s, r) => s + Number(r.pay?.annualFund || 0), 0);
                 const totalBooksCol    = status.reduce((s, r) => s + Number(r.pay?.booksPaid || 0), 0);
                 const grandCollected   = totalCollected + totalAF + totalBooksCol;
                 const totalOutstanding = status.reduce((s, r) => {
-                  if (!r.pay && r.due > 0) return s + Number(r.due);
-                  if (r.pay && Number(r.pay.amount) < Math.max(0, Number(r.due) - Number(r.pay.discount||0)))
-                    return s + (Math.max(0, Number(r.due) - Number(r.pay.discount||0)) - Number(r.pay.amount));
+                  const disc    = Number(r.pay?.discount||0) || r.autoDisc||0;
+                  const netBase = Math.max(0, Number(r.due||0) - disc);
+                  if (!r.pay && netBase > 0) return s + netBase;
+                  if (r.pay && Number(r.pay.amount) < netBase) return s + (netBase - Number(r.pay.amount));
                   return s;
                 }, 0);
                 return (
@@ -2554,8 +2603,8 @@ function Fees() {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-50">
-                            {status.map(({ stu, pay, due }, idx) => {
-                              const disc   = Number(pay?.discount || 0);
+                            {status.map(({ stu, pay, due, autoDisc }, idx) => {
+                              const disc   = Number(pay?.discount || 0) || autoDisc || 0;
                               const netDue = Math.max(0, Number(due) - disc);
                               return (
                               <tr key={stu.id} className="hover:bg-slate-50">
@@ -2678,7 +2727,7 @@ function Fees() {
                           <th className="px-4 py-3">Receipt No</th>
                           <th className="px-4 py-3">Month</th>
                           <th className="px-4 py-3">Amount</th>
-                          <th className="px-4 py-3 hidden sm:table-cell">Method</th>
+                          <th className="px-4 py-3">Account Head</th>
                           <th className="px-4 py-3 hidden sm:table-cell">Date</th>
                           <th className="px-4 py-3 hidden sm:table-cell">Note</th>
                           <th className="px-4 py-3 text-right">Print</th>
@@ -2690,7 +2739,7 @@ function Fees() {
                             <td className="px-4 py-3 font-mono text-xs text-gray-500">{p.rcpt}</td>
                             <td className="px-4 py-3 font-semibold">{MONTHS[p.month]} {p.year}</td>
                             <td className="px-4 py-3 font-bold text-emerald-700">Rs. {Number(p.amount).toLocaleString()}</td>
-                            <td className="px-4 py-3 hidden sm:table-cell"><Badge color={p.paymentMethod==='Bank Transfer'?'blue':p.paymentMethod==='JazzCash'||p.paymentMethod==='Easypaisa'?'purple':'green'}>{p.paymentMethod||'Cash'}</Badge></td>
+                            <td className="px-4 py-3"><Badge color={p.paymentMethod==='Bank Transfer'?'blue':p.paymentMethod==='JazzCash'||p.paymentMethod==='Easypaisa'?'purple':'green'}>{p.paymentMethod==='Cash'?'💵 Cash':p.paymentMethod==='Bank Transfer'?'🏦 Bank':p.paymentMethod==='JazzCash'?'📱 JazzCash':p.paymentMethod==='Easypaisa'?'📱 Easypaisa':p.paymentMethod||'💵 Cash'}</Badge></td>
                             <td className="px-4 py-3 text-gray-400 hidden sm:table-cell text-xs">{new Date(p.date).toLocaleDateString()}</td>
                             <td className="px-4 py-3 text-gray-400 hidden sm:table-cell text-xs">{p.note || '—'}</td>
                             <td className="px-4 py-3 text-right">
@@ -2851,6 +2900,41 @@ function FeeCollection() {
   // ── Family Split Payment ──
   const [familyMod, setFamilyMod]   = useState(null);
   const [familyForm, setFamilyForm] = useState({ totalAmount: '', paymentMethod: 'Cash', month: NOW.getMonth(), year: NOW.getFullYear(), note: '' });
+  const [familySearch, setFamilySearch] = useState('');
+
+  const printFamilyLedger = (familyKey, siblings) => {
+    const allPays = S.get(K.PAY, []);
+    const rows = siblings.map(stu => {
+      const due  = Number(classFees[stu.cls] || 0);
+      const stuPays = allPays.filter(p => p.stuId === stu.id).sort((a,b) => a.year !== b.year ? a.year-b.year : a.month-b.month);
+      const totalPaid = stuPays.reduce((s,p) => s+Number(p.amount||0), 0);
+      const ob   = Number(stu.openingBalance || 0);
+      const payDisc = stuPays.reduce((s,p) => s+Number(p.discount||0), 0);
+      const stuRate = Number(stu.monthlyFee || 0);
+      const autoDisc = stuRate > 0 && stuRate < due ? due - stuRate : 0;
+      const disc = Math.max(payDisc, autoDisc);
+      const netDue = Math.max(0, due - disc);
+      const outstanding = Math.max(0, netDue + ob - totalPaid);
+      const payRows = stuPays.map(p =>
+        `<tr><td>${MONTHS[p.month]} ${p.year}</td><td>${p.rcpt||'—'}</td><td>Rs. ${Number(p.amount).toLocaleString()}</td><td>${p.discount>0?'Rs. '+Number(p.discount).toLocaleString():'—'}</td><td>${p.annualFund>0?'Rs. '+Number(p.annualFund).toLocaleString():'—'}</td><td>${p.paymentMethod||'Cash'}</td></tr>`
+      ).join('');
+      return `<tr style="background:#f8fafc"><td colspan="5" style="font-weight:700;padding:8px 6px;border-top:2px solid #e2e8f0">
+        ${stu.name} — Class ${stu.cls} | Roll: ${stu.roll}${ob>0?' | Prev Due: Rs.'+ob.toLocaleString():''}
+      </td></tr>
+      <tr style="font-size:11px;color:#64748b;background:#f1f5f9"><td>Month</td><td>Receipt</td><td>Paid</td><td>Discount</td><td>Annual Fund</td><td>Method</td></tr>
+      ${payRows || '<tr><td colspan="6" style="color:#94a3b8;font-style:italic;padding:4px 6px">No payments recorded</td></tr>'}
+      <tr style="background:#ecfdf5"><td colspan="2" style="font-weight:700;padding:6px">Total Paid</td><td style="font-weight:700;color:#059669">Rs. ${totalPaid.toLocaleString()}</td><td></td><td colspan="2" style="font-weight:700;color:${outstanding>0?'#dc2626':'#059669'}">Balance: Rs. ${outstanding.toLocaleString()}</td></tr>`;
+    }).join('');
+    printPage(`Family Ledger — ${familyKey}`, `
+      <h2 style="margin-bottom:4px">Family Ledger — ${familyKey}</h2>
+      <p style="font-size:12px;color:#64748b;margin-bottom:12px">Printed: ${NOW.toLocaleDateString('en-PK',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}</p>
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr style="background:#1e3a8a;color:white">
+          <th style="padding:6px">Month</th><th>Receipt</th><th>Paid</th><th>Discount</th><th>Annual Fund</th><th>Method</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`);
+  };
 
   // Aggregate all payments per student for the selected month — supports multiple (partial) payments
   const paidMap = useMemo(() => {
@@ -3054,24 +3138,45 @@ function FeeCollection() {
     return Object.entries(groups).filter(([, v]) => v.length >= 2);
   }, [students]);
 
-  // ── Split Preview — auto-distribute lump sum across siblings ──
+  // ── Split Preview — equally distribute lump sum across siblings ──
   const splitPreview = useMemo(() => {
     if (!familyMod || !Number(familyForm.totalAmount)) return [];
-    let remaining = Number(familyForm.totalAmount);
-    return familyMod.siblings.map(stu => {
+    const total = Number(familyForm.totalAmount);
+    // Use selected month/year paid map (not all-time)
+    const selPaid = {};
+    payments.filter(p => p.month === familyForm.month && p.year === familyForm.year).forEach(p => {
+      if (!selPaid[p.stuId]) selPaid[p.stuId] = { total: 0, totalDisc: 0 };
+      selPaid[p.stuId].total    += Number(p.amount || 0);
+      selPaid[p.stuId].totalDisc += Number(p.discount || 0);
+    });
+    // Build sibling data first
+    const data = familyMod.siblings.map(stu => {
       const due      = Number(classFees[stu.cls] || 0);
       const stuRate  = Number(stu.monthlyFee || 0);
       const autoDisc = stuRate > 0 && stuRate < due ? due - stuRate : 0;
-      const atInfo   = allTimePaidMapFC[stu.id];
-      const paid     = atInfo ? atInfo.total : 0;
-      const disc     = atInfo ? Math.max(atInfo.totalDisc, autoDisc) : autoDisc;
+      const info     = selPaid[stu.id];
+      const paid     = info ? info.total : 0;
+      const disc     = info ? Math.max(info.totalDisc, autoDisc) : autoDisc;
       const ob       = Number(stu.openingBalance || 0);
       const outstanding = Math.max(0, Math.max(0, due - disc) + ob - paid);
-      const allocate    = Math.min(remaining, outstanding);
-      remaining         = Math.max(0, remaining - allocate);
-      const balAfter    = outstanding - allocate;
-      return { stu, due, paid, disc, ob, outstanding, allocate, balAfter };
+      return { stu, due, paid, disc, ob, outstanding, allocate: 0 };
     });
+    // Equal split with redistribution of excess
+    let remaining = total;
+    let unpaid = data.filter(r => r.outstanding > 0);
+    while (remaining > 0 && unpaid.length > 0) {
+      const share = Math.floor(remaining / unpaid.length);
+      let redistributed = false;
+      unpaid.forEach(r => {
+        const give = Math.min(share || remaining, r.outstanding - r.allocate);
+        r.allocate += give;
+        remaining  -= give;
+        if (give > 0) redistributed = true;
+      });
+      unpaid = data.filter(r => r.outstanding > r.allocate);
+      if (!redistributed) break;
+    }
+    return data.map(r => ({ ...r, balAfter: r.outstanding - r.allocate }));
   }, [familyMod, familyForm.totalAmount, allTimePaidMapFC, classFees]);
 
   const canCollect = isAdmin || staffCanModify || isPrincipal; // principal CAN collect new fees
@@ -3913,9 +4018,20 @@ function FeeCollection() {
       {/* ════════════════ FAMILY SPLIT TAB ════════════════ */}
       {tab === 'family' && (
         <div>
-          {familyGroups.length === 0
+          <Card className="p-3 mb-4">
+            <input value={familySearch} onChange={e => setFamilySearch(e.target.value)}
+              placeholder="Search by family name or student name..."
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+          </Card>
+          {familyGroups.filter(([fk, sibs]) =>
+            !familySearch || fk.toLowerCase().includes(familySearch.toLowerCase()) ||
+            sibs.some(s => s.name.toLowerCase().includes(familySearch.toLowerCase()))
+          ).length === 0
             ? <Empty icon="👨‍👧‍👦" text="No families found. Make sure siblings share the same Family Name or Father's Name in student records." />
-            : familyGroups.map(([familyKey, siblings]) => {
+            : familyGroups.filter(([fk, sibs]) =>
+                !familySearch || fk.toLowerCase().includes(familySearch.toLowerCase()) ||
+                sibs.some(s => s.name.toLowerCase().includes(familySearch.toLowerCase()))
+              ).map(([familyKey, siblings]) => {
                 const totalOutstanding = siblings.reduce((s, stu) => {
                   const due  = Number(classFees[stu.cls] || 0);
                   const paid = paidMap[stu.id]?.total || 0;
@@ -3932,12 +4048,15 @@ function FeeCollection() {
                         <p className={`font-bold text-base ${allPaid ? 'text-emerald-800' : 'text-blue-900'}`}>👨‍👧‍👦 {familyKey}</p>
                         <p className="text-xs text-gray-500">{siblings.length} siblings — {allPaid ? '✅ All Cleared' : `Outstanding: Rs. ${totalOutstanding.toLocaleString()}`}</p>
                       </div>
-                      {!allPaid && (
-                        <Btn variant="red" onClick={() => {
-                          setFamilyMod({ familyKey, siblings });
-                          setFamilyForm({ totalAmount: String(totalOutstanding), paymentMethod: 'Cash', month: vm, year: vy, note: '' });
-                        }}>💳 Pay Rs. {totalOutstanding.toLocaleString()}</Btn>
-                      )}
+                      <div className="flex gap-2 flex-wrap">
+                        <Btn variant="outline" onClick={() => printFamilyLedger(familyKey, siblings)}>🖨️ Print Ledger</Btn>
+                        {!allPaid && (
+                          <Btn variant="red" onClick={() => {
+                            setFamilyMod({ familyKey, siblings });
+                            setFamilyForm({ totalAmount: String(totalOutstanding), paymentMethod: 'Cash', month: vm, year: vy, note: '' });
+                          }}>💳 Pay Rs. {totalOutstanding.toLocaleString()}</Btn>
+                        )}
+                      </div>
                     </div>
                     {/* Siblings Table */}
                     <div className="overflow-x-auto">
@@ -4402,11 +4521,13 @@ function FamilyLedger() {
 
   // Per-child status
   const getChildStatus = (stu) => {
-    const due  = Number(classFees[stu.cls] || 0);
-    const paid = monthPaidMap[stu.id] || 0;
-    if (paid <= 0)              return 'unpaid';
-    if (due > 0 && paid >= due) return 'paid';
-    if (paid > due)             return 'advance';
+    const classFee = Number(classFees[stu.cls] || 0);
+    const disc     = getStuAutoDisc(stu);
+    const netDue   = Math.max(0, classFee - disc);
+    const paid     = monthPaidMap[stu.id] || 0;
+    if (paid <= 0)                    return 'unpaid';
+    if (netDue > 0 && paid >= netDue) return 'paid';
+    if (paid > netDue)                return 'advance';
     return 'partial';
   };
 
@@ -4419,15 +4540,15 @@ function FamilyLedger() {
     return 'unpaid';
   }, [familyStudents, monthPaidMap, classFees]);
 
-  const totalDue            = familyStudents.reduce((s, st) => s + Number(classFees[st.cls] || 0), 0);
-  const totalPaidMonth      = familyStudents.reduce((s, st) => s + (monthPaidMap[st.id] || 0), 0);
-  const totalBalance        = Math.max(0, totalDue - totalPaidMonth);
-  const allTimePaid         = familyPayments.reduce((s, p) => s + Number(p.amount || 0), 0);
-  const totalOpeningBalance = familyStudents.reduce((s, st) => s + Number(st.openingBalance || 0), 0);
   // Per-student: auto discount = classFee − stu.monthlyFee (if monthlyFee < classFee)
   const getStuAutoDisc = (st) => { const cf = Number(classFees[st.cls]||0); const sr = Number(st.monthlyFee||0); return sr > 0 && sr < cf ? cf - sr : 0; };
-  const totalDiscount       = familyStudents.reduce((s, st) => s + getStuAutoDisc(st), 0);
+  const totalDue              = familyStudents.reduce((s, st) => s + Number(classFees[st.cls] || 0), 0);
+  const totalPaidMonth        = familyStudents.reduce((s, st) => s + (monthPaidMap[st.id] || 0), 0);
+  const totalDiscount         = familyStudents.reduce((s, st) => s + getStuAutoDisc(st), 0);
   const totalActualMonthlyDue = familyStudents.reduce((s, st) => s + Math.max(0, Number(classFees[st.cls]||0) - getStuAutoDisc(st)), 0);
+  const totalBalance          = Math.max(0, totalActualMonthlyDue - totalPaidMonth);
+  const allTimePaid           = familyPayments.reduce((s, p) => s + Number(p.amount || 0), 0);
+  const totalOpeningBalance   = familyStudents.reduce((s, st) => s + Number(st.openingBalance || 0), 0);
   // Annual Fund totals
   const totalAFDue     = familyStudents.reduce((s, st) => s + Number(st.annualFund || 0), 0);
   const totalAFPaid    = familyStudents.reduce((s, st) => s + (monthAFPaidMap[st.id] || 0), 0);
@@ -4720,7 +4841,7 @@ function FamilyLedger() {
       stu,
       share: idx === n-1 ? Math.round((base + rem)*100)/100 : base,
       afShare: af > 0 ? (idx === n-1 ? Math.round((baseAF + afRem)*100)/100 : baseAF) : 0,
-      due: Number(classFees[stu.cls] || 0),
+      due: Math.max(0, Number(classFees[stu.cls] || 0) - getStuAutoDisc(stu)),
       alreadyPaid: monthPaidMap[stu.id] || 0,
     }));
   }, [pf.totalAmount, pf.annualFund, familyStudents, classFees, monthPaidMap]);
@@ -7594,7 +7715,7 @@ function CashBook() {
         const an = accounts.find(a=>a.id===e.accountId)?.name || e.accountName || '';
         bodyRows += `<tr>
           <td></td>
-          <td><span class="badge ${e.type==='income'?'b-green':'b-red'}">${e.type==='income'?'↑ In':'↓ Out'}</span></td>
+          <td><span class="badge ${e.type==='income'?'b-green':'b-red'}">${e.type==='income'?'↓ In':'↑ Out'}</span></td>
           <td><b>${e.description}</b>${e.note?`<br/><span style="color:#9ca3af;font-size:10px">${e.note}</span>`:''}</td>
           <td>${an}</td>
           <td style="text-align:right;color:#065f46">${e.type==='income'?'Rs. '+Number(e.amount).toLocaleString():''}</td>
@@ -7865,6 +7986,7 @@ function CashBook() {
                             return (
                               <tr key={e.id} className={`hover:bg-slate-50 border-b border-gray-50 ${e.refType==='transfer'?'bg-purple-50/40':e.type==='expense'?'bg-red-50/30':''}`}>
                                 <td className="px-4 py-2.5 text-xs font-bold text-gray-400">{String(ei+1).padStart(2,'0')}</td>
+                                <td className="px-4 py-2.5 text-xs text-gray-400">{new Date(e.date).toLocaleDateString('en-PK',{day:'2-digit',month:'short'})}</td>
                                 <td className="px-4 py-2.5">
                                   {e.refType==='transfer'
                                     ? <Badge color="purple">↔ Transfer</Badge>
