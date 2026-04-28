@@ -751,10 +751,16 @@ function ParentPortal({ currentUser, onLogout }) {
                     </p>
                   </div>
                   {n.data && (
-                    <button onClick={() => { const w = window.open('','_blank','width=800,height=700'); w.document.write(`<!DOCTYPE html><html><head><title>${n.title}</title><style>body{margin:0;background:#1a1a1a;display:flex;align-items:center;justify-content:center;min-height:100vh}img{max-width:100%;max-height:100vh;object-fit:contain}iframe{width:100%;height:100vh;border:none}</style></head><body>${n.fileType==='pdf' ? `<iframe src="${n.data}"></iframe>` : `<img src="${n.data}"/>`}</body></html>`); w.document.close(); }}
-                      className="shrink-0 bg-red-600 hover:bg-red-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-all">
-                      View / Print
-                    </button>
+                    <div className="flex gap-1.5 shrink-0">
+                      <button onClick={() => { const w = window.open('','_blank','width=800,height=700'); w.document.write(`<!DOCTYPE html><html><head><title>${n.title}</title><style>body{margin:0;background:#1a1a1a;display:flex;align-items:center;justify-content:center;min-height:100vh}img{max-width:100%;max-height:100vh;object-fit:contain}iframe{width:100%;height:100vh;border:none}</style></head><body>${n.fileType==='pdf' ? `<iframe src="${n.data}"></iframe>` : `<img src="${n.data}"/>`}</body></html>`); w.document.close(); }}
+                        className="bg-red-600 hover:bg-red-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-all">
+                        View / Print
+                      </button>
+                      <a href={n.data} download={n.title + (n.fileType === 'pdf' ? '.pdf' : '.jpg')}
+                        className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-all flex items-center gap-1">
+                        ⬇ Download
+                      </a>
+                    </div>
                   )}
                 </div>
                 {n.note && <p className="px-4 py-2 text-xs text-gray-500 bg-gray-50">{n.note}</p>}
