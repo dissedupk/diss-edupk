@@ -825,7 +825,9 @@ function ParentPortal({ currentUser, onLogout }) {
                     <div key={c.id} className="border border-gray-100 rounded-xl p-3">
                       <div className="flex items-center justify-between mb-1">
                         <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${c.type==='suggestion' ? 'bg-blue-100 text-blue-700' : c.type==='leave' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{c.type==='leave' ? 'Leave Application' : c.type}</span>
-                        <span className={`text-xs font-semibold ${c.status==='resolved' ? 'text-green-600' : 'text-amber-600'}`}>{c.status === 'resolved' ? '✓ Resolved' : '⏳ Pending'}</span>
+                        <span className={`text-xs font-semibold ${c.status==='resolved' ? 'text-green-600' : c.status==='under_review' ? 'text-blue-600' : c.status==='decision_making' ? 'text-purple-600' : 'text-amber-600'}`}>
+                          {c.status==='resolved' ? '✓ Resolved' : c.status==='under_review' ? '🔍 Under Review' : c.status==='decision_making' ? '⚖️ Decision Making' : '⏳ Pending'}
+                        </span>
                       </div>
                       <p className="text-sm font-semibold text-gray-800">{c.subject}</p>
                       <p className="text-xs text-gray-500 mt-0.5">{new Date(c.submittedAt).toLocaleDateString('en-PK',{day:'2-digit',month:'short',year:'numeric'})}</p>
@@ -894,10 +896,19 @@ function Notifications() {
     persist(notifs.filter(n => n.id !== id));
   };
 
-  const resolveComp = (id) => {
-    const updated = comps.map(c => c.id === id ? { ...c, status: 'resolved' } : c);
+  const setCompStatus = (id, status) => {
+    const updated = comps.map(c => c.id === id ? { ...c, status } : c);
     S.set(K.COMP, updated); setComps(updated);
   };
+
+  const COMP_STATUS = [
+    { value: 'open',             label: '⏳ Open',              color: 'text-amber-600'  },
+    { value: 'under_review',     label: '🔍 Under Review',      color: 'text-blue-600'   },
+    { value: 'decision_making',  label: '⚖️ Decision Making',   color: 'text-purple-600' },
+    { value: 'resolved',         label: '✓ Resolved',           color: 'text-green-600'  },
+  ];
+  const getStatusLabel = (s) => COMP_STATUS.find(x => x.value === s)?.label || '⏳ Open';
+  const getStatusColor = (s) => COMP_STATUS.find(x => x.value === s)?.color || 'text-amber-600';
 
   const saveReply = (id) => {
     if (!replyText.trim()) return;
@@ -952,10 +963,17 @@ function Notifications() {
             <Card key={c.id} className="p-4">
               <div className="flex items-start justify-between gap-2 mb-2">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${c.type==='suggestion' ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}`}>{c.type}</span>
-                  <span className={`text-xs font-semibold ${c.status==='resolved' ? 'text-green-600' : 'text-amber-600'}`}>{c.status==='resolved' ? '✓ Resolved' : '⏳ Open'}</span>
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${c.type==='suggestion' ? 'bg-blue-100 text-blue-700' : c.type==='leave' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                    {c.type==='leave' ? 'Leave Application' : c.type==='suggestion' ? 'Suggestion' : 'Complaint'}
+                  </span>
+                  <span className={`text-xs font-semibold ${getStatusColor(c.status)}`}>{getStatusLabel(c.status)}</span>
                 </div>
-                {isAdmin && c.status === 'open' && <Btn sm variant="outline" onClick={() => resolveComp(c.id)}>Mark Resolved</Btn>}
+                {isAdmin && (
+                  <select value={c.status || 'open'} onChange={e => setCompStatus(c.id, e.target.value)}
+                    className="text-xs border border-gray-200 rounded-lg px-2 py-1 bg-white text-gray-700 font-semibold focus:outline-none focus:ring-2 focus:ring-red-300 cursor-pointer">
+                    {COMP_STATUS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                  </select>
+                )}
               </div>
               <p className="font-bold text-gray-800 text-sm">{c.subject}</p>
               <p className="text-xs text-gray-500 mt-0.5">{c.parentName} &nbsp;·&nbsp; Family {c.familyId} &nbsp;·&nbsp; {new Date(c.submittedAt).toLocaleDateString('en-PK',{day:'2-digit',month:'short',year:'numeric'})}</p>
