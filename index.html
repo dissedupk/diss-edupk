@@ -915,7 +915,9 @@ function Notifications() {
 
   const saveReply = (id) => {
     if (!replyText.trim()) return;
-    const updated = comps.map(c => c.id === id ? { ...c, reply: replyText.trim(), repliedAt: new Date().toISOString(), repliedBy: currentUser?.name || 'Admin' } : c);
+    const updated = comps.map(c => c.id === id
+      ? { ...c, reply: replyText.trim(), repliedAt: new Date().toISOString(), repliedBy: userName || 'Admin', status: 'resolved' }
+      : c);
     S.set(K.COMP, updated); setComps(updated);
     setReplyMod(null); setReplyText('');
   };
