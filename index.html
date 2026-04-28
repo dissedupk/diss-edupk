@@ -618,7 +618,7 @@ function ParentPortal({ currentUser, onLogout }) {
   const TABS = [
     { id:'fee',        icon:'💰', label:'Fee Status' },
     { id:'notif',      icon:'📢', label:'Notifications' },
-    { id:'complaint',  icon:'📝', label:'Complaints' },
+    { id:'complaint',  icon:'📝', label:'Messages' },
   ];
 
   return (
@@ -766,7 +766,7 @@ function ParentPortal({ currentUser, onLogout }) {
         {/* ── COMPLAINTS & SUGGESTIONS ── */}
         {tab === 'complaint' && (
           <div className="space-y-4 max-w-xl">
-            <h2 className="text-base font-bold text-gray-800">Complaints & Suggestions</h2>
+            <h2 className="text-base font-bold text-gray-800">Messages</h2>
 
             {cSent && (
               <div className="bg-green-50 border border-green-200 text-green-700 text-sm px-4 py-3 rounded-xl">
@@ -781,6 +781,7 @@ function ParentPortal({ currentUser, onLogout }) {
                 <select value={cForm.type} onChange={e => setCForm({...cForm, type: e.target.value})} className={inputCls}>
                   <option value="complaint">Complaint</option>
                   <option value="suggestion">Suggestion</option>
+                  <option value="leave">Leave Application</option>
                 </select>
               </div>
               <div className="mb-3">
@@ -803,7 +804,7 @@ function ParentPortal({ currentUser, onLogout }) {
               </div>
               <button onClick={submitComplaint}
                 className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded-xl text-sm transition-all">
-                Submit {cForm.type === 'suggestion' ? 'Suggestion' : 'Complaint'}
+                Submit {cForm.type === 'suggestion' ? 'Suggestion' : cForm.type === 'leave' ? 'Leave Application' : 'Complaint'}
               </button>
             </div>
 
@@ -817,7 +818,7 @@ function ParentPortal({ currentUser, onLogout }) {
                     .map(c => (
                     <div key={c.id} className="border border-gray-100 rounded-xl p-3">
                       <div className="flex items-center justify-between mb-1">
-                        <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${c.type==='suggestion' ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}`}>{c.type}</span>
+                        <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${c.type==='suggestion' ? 'bg-blue-100 text-blue-700' : c.type==='leave' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{c.type==='leave' ? 'Leave Application' : c.type}</span>
                         <span className={`text-xs font-semibold ${c.status==='resolved' ? 'text-green-600' : 'text-amber-600'}`}>{c.status === 'resolved' ? '✓ Resolved' : '⏳ Pending'}</span>
                       </div>
                       <p className="text-sm font-semibold text-gray-800">{c.subject}</p>
