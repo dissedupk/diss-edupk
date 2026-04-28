@@ -684,8 +684,13 @@ function ParentPortal({ currentUser, onLogout }) {
                   <div className="p-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
                     <div className="bg-blue-50 rounded-xl p-3">
                       <p className="text-xs text-blue-600 font-semibold uppercase tracking-wide">Monthly Fee</p>
-                      <p className="text-base font-bold text-blue-800 mt-0.5">Rs. {fee.toLocaleString()}</p>
-                      {discount > 0 && <p className="text-xs text-green-600 mt-0.5">Discount: Rs. {discount.toLocaleString()}</p>}
+                      <p className="text-base font-bold text-blue-800 mt-0.5">Rs. {classFee.toLocaleString()}</p>
+                      {discount > 0 && (
+                        <>
+                          <p className="text-xs text-red-500 mt-0.5">− Discount: Rs. {discount.toLocaleString()}</p>
+                          <p className="text-xs font-bold text-green-700 mt-0.5">= Rs. {fee.toLocaleString()}</p>
+                        </>
+                      )}
                     </div>
                     <div className={`rounded-xl p-3 ${isPaid ? 'bg-green-50' : 'bg-red-50'}`}>
                       <p className={`text-xs font-semibold uppercase tracking-wide ${isPaid ? 'text-green-600' : 'text-red-600'}`}>This Month</p>
