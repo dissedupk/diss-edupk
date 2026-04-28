@@ -595,14 +595,17 @@ function ParentPortal({ currentUser, onLogout }) {
 
   // ── Fee calculations per student ──
   const feeData = students.map(s => {
-    const classFee  = Number(classFees[s.cls] || 0);
-    const customFee = Number(s.monthlyFee || 0);
-    const discount  = customFee > 0 && customFee < classFee ? classFee - customFee : 0;
-    const fee       = customFee > 0 ? customFee : classFee;
-    const allPays = payments.filter(p => p.stuId === s.id);
+    const classFee     = Number(classFees[s.cls] || 0);
+    const customFee    = Number(s.monthlyFee || 0);
+    const allPays      = payments.filter(p => p.stuId === s.id);
     const curMonthPays = allPays.filter(p => p.month === curM && p.year === curY);
-    const paidThisMonth = curMonthPays.reduce((t, p) => t + Number(p.amount || 0), 0);
-    const lastPay = [...allPays].sort((a, b) => new Date(b.date) - new Date(a.date))[0];
+    const paidThisMonth   = curMonthPays.reduce((t, p) => t + Number(p.amount || 0), 0);
+    const payDiscThisMonth = curMonthPays.reduce((t, p) => t + Number(p.discount || 0), 0);
+    // Use monthlyFee if set, else fall back to payment-recorded discount
+    const autoDisc = customFee > 0 && customFee < classFee ? classFee - customFee : 0;
+    const discount = autoDisc > 0 ? autoDisc : payDiscThisMonth;
+    const fee      = Math.max(0, classFee - discount);
+    const lastPay  = [...allPays].sort((a, b) => new Date(b.date) - new Date(a.date))[0];
     const totalPaid = allPays.reduce((t, p) => t + Number(p.amount || 0), 0);
     const afPaid    = allPays.reduce((t, p) => t + Number(p.annualFund || 0), 0);
     const afDue     = Number(s.annualFund || 0);
