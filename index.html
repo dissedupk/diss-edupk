@@ -5912,10 +5912,19 @@ function UserAdmin({ onPasswordChange }) {
     S.set(K.PREQ, updPreqs); setPreqs(updPreqs);
   };
 
-  const roleBadge = (r) => {
-    const map = { admin:'blue', principal:'green', teacher:'purple', staff:'gray', parent:'yellow' };
-    const label = { admin:'🔐 Admin', principal:'🎓 Principal', teacher:'📖 Teacher', staff:'👤 Staff', parent:'👨‍👩‍👧 Parent' };
-    return <Badge color={map[r]||'gray'}>{label[r]||r}</Badge>;
+  const ROLE_DEFAULT_NAMES = {
+    admin: 'Admin — Full Access',
+    principal: 'Principal — View All, No Edit/Delete',
+    teacher: 'Teacher — Notifications & Complaints',
+    staff: 'Staff — Fee Collection',
+    parent: 'Parent',
+    custom: '',
+  };
+  const roleBadge = (r, rName) => {
+    const map = { admin:'blue', principal:'green', teacher:'purple', staff:'gray', parent:'yellow', custom:'red' };
+    const defaultLabel = { admin:'🔐 Admin', principal:'🎓 Principal', teacher:'📖 Teacher', staff:'👤 Staff', parent:'👨‍👩‍👧 Parent', custom:'⚙️ Custom' };
+    const display = rName || defaultLabel[r] || r;
+    return <Badge color={map[r]||'gray'}>{display}</Badge>;
   };
 
   const pendingCount = preqs.filter(r => users.find(u => u.id===r.id && u.status==='pending')).length;
@@ -5926,7 +5935,7 @@ function UserAdmin({ onPasswordChange }) {
         <h2 className="text-xl font-bold text-gray-800">User Management</h2>
         <div className="flex gap-2">
           <Btn variant="outline" onClick={() => { setPwMod(true); setPwForm({ cur:'', newp:'', conf:'' }); }}>🔑 My Password</Btn>
-          {isAdmin && <Btn onClick={() => setForm({ username:'', password:'', name:'', role:'staff' })}>+ Add User</Btn>}
+          {isAdmin && <Btn onClick={() => setForm({ username:'', password:'', name:'', role:'staff', roleName: ROLE_DEFAULT_NAMES['staff'] })}>+ Add User</Btn>}
         </div>
       </div>
 
@@ -5967,7 +5976,7 @@ function UserAdmin({ onPasswordChange }) {
                       {u.familyId && <span className="ml-2 text-xs text-gray-400">({u.familyId})</span>}
                     </td>
                     <td className="px-4 py-3 font-mono text-gray-600">{u.username}</td>
-                    <td className="px-4 py-3">{roleBadge(u.role)}</td>
+                    <td className="px-4 py-3">{roleBadge(u.role, u.roleName)}</td>
                     {isAdmin && (
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1">
@@ -6029,8 +6038,11 @@ function UserAdmin({ onPasswordChange }) {
           <Inp label="Username *" value={form.username} onChange={e => setForm({...form, username: e.target.value})} placeholder="Login username"/>
           <Inp label={form.id ? 'New Password (leave blank to keep)' : 'Password *'} type="password"
             value={form.password} onChange={e => setForm({...form, password: e.target.value})} placeholder="Password"/>
-          <Sel label="Role" value={form.role} onChange={e => setForm({...form, role: e.target.value, allowedModules: e.target.value==='custom' ? (form.allowedModules||[]) : undefined})}
-            options={[{v:'admin',l:'Admin — Full Access'},{v:'principal',l:'Principal — View All, No Edit/Delete'},{v:'teacher',l:'Teacher — Notifications & Complaints'},{v:'staff',l:'Staff — Fee Collection'},{v:'custom',l:'Custom — Select Modules Below'}]}/>
+          <Inp label="Role Name *" value={form.roleName||''} onChange={e => setForm({...form, roleName: e.target.value})} placeholder="e.g. Admin — Full Access"/>
+          <Sel label="Role (Access Level)" value={form.role} onChange={e => {
+            const r = e.target.value;
+            setForm({...form, role: r, roleName: ROLE_DEFAULT_NAMES[r] || form.roleName || '', allowedModules: r==='custom' ? (form.allowedModules||[]) : undefined});
+          }} options={[{v:'admin',l:'Admin — Full Access'},{v:'principal',l:'Principal — View All, No Edit/Delete'},{v:'teacher',l:'Teacher — Notifications & Complaints'},{v:'staff',l:'Staff — Fee Collection'},{v:'custom',l:'Custom — Select Modules Below'}]}/>
           {form.role === 'custom' && (
             <div className="border border-gray-200 rounded-xl p-3 mt-1">
               <p className="text-xs font-bold text-gray-600 uppercase tracking-wide mb-2">Select Allowed Modules</p>
