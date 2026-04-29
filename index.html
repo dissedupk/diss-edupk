@@ -233,7 +233,7 @@ function addCashBookEntry(type, description, amount, paymentMethod, date, note, 
 const LOGO_SRC = (() => { try { return new URL('diss-app/logo diss/for invoice printing diss logo.png', window.location.href).href; } catch { return ''; } })();
 const ADDR_SRC = (() => { try { return new URL('diss-app/logo diss/diss address for fotter.png', window.location.href).href; } catch { return ''; } })();
 
-const PRINT_FOOTER = `<div style="margin-top:14px;padding-top:10px;border-top:1px solid #e5e7eb;text-align:center"><img src="${ADDR_SRC}" alt="DISS Address" style="max-width:520px;width:100%;object-fit:contain" onerror="this.style.display='none'"/><div style="font-size:9px;color:#9ca3af;letter-spacing:.3px;margin-top:6px">DEVELOPED BY TATAHEER BUSINESS GROUP &nbsp;|&nbsp; ALL RIGHTS RESERVED 2026 &nbsp;|&nbsp; DEVELOPER CONTACT: +92(321)8555566</div></div>`;
+const PRINT_FOOTER = `<div style="margin-top:14px;padding-top:10px;border-top:1px solid #e5e7eb;text-align:center"><img src="${ADDR_SRC}" alt="DISS Address" style="max-width:520px;width:100%;object-fit:contain" onerror="this.style.display='none'"/><div style="font-size:9px;color:#9ca3af;letter-spacing:.3px;margin-top:6px">© 2026 DISS — All Rights Reserved &nbsp;|&nbsp; Powered by Tataheer Business Group &nbsp;|&nbsp; +923218555566</div></div>`;
 
 // ── Print Utility ─────────────────────────────────────────────────────────────
 const SCHOOL_HEADER = `
@@ -527,7 +527,7 @@ function LoginScreen({ onLogin }) {
           </>
         )}
 
-        <p className="text-center text-xs text-gray-300 mt-6 leading-tight">DEVELOPED BY TATAHEER BUSINESS GROUP<br/>ALL RIGHTS RESERVED 2026</p>
+        <p className="text-center text-xs text-gray-300 mt-6 leading-tight">© 2026 DISS — All Rights Reserved<br/>Powered by Tataheer Business Group<br/>+923218555566</p>
       </div>
     </div>
   );
@@ -2561,7 +2561,7 @@ function Fees() {
       ${pay.note ? `<p style="font-size:11px;color:#6b7280">Note: ${pay.note}</p>` : ''}
       <hr class="divider"/>
       <p class="footer">Thank you for your payment!</p>
-      <div class="dev-footer">DEVELOPED BY TATAHEER BUSINESS GROUP &nbsp;|&nbsp; ALL RIGHTS RESERVED 2026 &nbsp;|&nbsp; DEVELOPER CONTACT: +92(321)8555566</div>
+      <div class="dev-footer">© 2026 DISS — All Rights Reserved &nbsp;|&nbsp; Powered by Tataheer Business Group &nbsp;|&nbsp; +923218555566</div>
       <script>window.onload=function(){window.print();}<\/script>
     </body></html>`);
     win.document.close();
@@ -3177,7 +3177,7 @@ function FeeCollection() {
       ${pay.note ? `<p style="font-size:11px;color:#6b7280;margin-top:4px">Note: ${pay.note}</p>` : ''}
       <hr class="divider"/>
       <p class="footer">Thank you for your payment!</p>
-      <div class="dev-footer">DEVELOPED BY TATAHEER BUSINESS GROUP &nbsp;|&nbsp; ALL RIGHTS RESERVED 2026 &nbsp;|&nbsp; DEVELOPER CONTACT: +92(321)8555566</div>
+      <div class="dev-footer">© 2026 DISS — All Rights Reserved &nbsp;|&nbsp; Powered by Tataheer Business Group &nbsp;|&nbsp; +923218555566</div>
       <script>window.onload=function(){window.print();}<\/script>
     </body></html>`);
     win.document.close();
@@ -4774,7 +4774,7 @@ function FamilyLedger() {
       ${pays[0]?.note && pays[0].note !== '[Family Split]' ? `<p style="font-size:11px;color:#6b7280">Note: ${pays[0].note.replace('[Family Split] ','')}</p>` : ''}
       <hr class="divider"/>
       <p class="footer">Thank you for your payment!</p>
-      <div class="dev-footer">DEVELOPED BY TATAHEER BUSINESS GROUP &nbsp;|&nbsp; ALL RIGHTS RESERVED 2026 &nbsp;|&nbsp; DEVELOPER CONTACT: +92(321)8555566</div>
+      <div class="dev-footer">© 2026 DISS — All Rights Reserved &nbsp;|&nbsp; Powered by Tataheer Business Group &nbsp;|&nbsp; +923218555566</div>
       <script>window.onload=function(){window.print();}<\/script>
     </body></html>`);
     win.document.close();
@@ -4823,7 +4823,7 @@ function FamilyLedger() {
       ${pay.note ? `<p style="font-size:11px;color:#6b7280">Note: ${pay.note}</p>` : ''}
       <hr class="divider"/>
       <p class="footer">Thank you for your payment!</p>
-      <div class="dev-footer">DEVELOPED BY TATAHEER BUSINESS GROUP &nbsp;|&nbsp; ALL RIGHTS RESERVED 2026 &nbsp;|&nbsp; DEVELOPER CONTACT: +92(321)8555566</div>
+      <div class="dev-footer">© 2026 DISS — All Rights Reserved &nbsp;|&nbsp; Powered by Tataheer Business Group &nbsp;|&nbsp; +923218555566</div>
       <script>window.onload=function(){window.print();}<\/script>
     </body></html>`);
     win.document.close();
@@ -5580,7 +5580,7 @@ function Staff() {
         <div>Staff Signature: __________</div>
         <div>Principal Signature: __________</div>
       </div>
-      <div class="dev-footer">DEVELOPED BY TATAHEER BUSINESS GROUP &nbsp;|&nbsp; ALL RIGHTS RESERVED 2026 &nbsp;|&nbsp; DEVELOPER CONTACT: +92(321)8555566</div>
+      <div class="dev-footer">© 2026 DISS — All Rights Reserved &nbsp;|&nbsp; Powered by Tataheer Business Group &nbsp;|&nbsp; +923218555566</div>
       <script>window.onload=function(){window.print();}<\/script>
     </body></html>`);
     win.document.close();
@@ -6244,7 +6244,7 @@ function VendorBooks() {
       <div style="display:flex;justify-content:space-between;margin-top:30px;font-size:11px;color:#6b7280">
         <span>Authorized By: _______________</span><span>Vendor Signature: _______________</span>
       </div>
-      <div class="dev-footer">DEVELOPED BY TATAHEER BUSINESS GROUP &nbsp;|&nbsp; ALL RIGHTS RESERVED 2026 &nbsp;|&nbsp; DEVELOPER CONTACT: +92(321)8555566</div>
+      <div class="dev-footer">© 2026 DISS — All Rights Reserved &nbsp;|&nbsp; Powered by Tataheer Business Group &nbsp;|&nbsp; +923218555566</div>
       <script>window.onload=function(){window.print();}<\/script>
     </body></html>`);
     win.document.close();
@@ -6960,7 +6960,7 @@ function Exams() {
           <div class="sig-item"><div class="sig-line">Examiner</div></div>
           <div class="sig-item"><div class="sig-line">Principal</div></div>
         </div>
-        <div class="dev-footer">DEVELOPED BY TATAHEER BUSINESS GROUP &nbsp;|&nbsp; ALL RIGHTS RESERVED 2026 &nbsp;|&nbsp; CONTACT: +92(321)8555566</div>
+        <div class="dev-footer">© 2026 DISS — All Rights Reserved &nbsp;|&nbsp; Powered by Tataheer Business Group &nbsp;|&nbsp; +923218555566</div>
       </div>
     </div>
     <script>window.onload=function(){window.print();}<\/script>
@@ -7022,7 +7022,7 @@ function Exams() {
     <table><thead><tr><th>#</th><th>Subject</th><th>Date</th><th>Day</th><th>Time</th></tr></thead>
     <tbody>${rows}</tbody></table>
     <div class="sig"><span>Class Teacher: _______________</span><span>Principal: _______________</span></div>
-    <div class="dev-footer">DEVELOPED BY TATAHEER BUSINESS GROUP &nbsp;|&nbsp; ALL RIGHTS RESERVED 2026 &nbsp;|&nbsp; DEVELOPER CONTACT: +92(321)8555566</div>
+    <div class="dev-footer">© 2026 DISS — All Rights Reserved &nbsp;|&nbsp; Powered by Tataheer Business Group &nbsp;|&nbsp; +923218555566</div>
     <script>window.onload=function(){window.print();}<\/script>
     </body></html>`);
     win.document.close();
@@ -7128,7 +7128,7 @@ function Exams() {
       <span>Principal: _______________</span>
       <span>Parent Signature: _______________</span>
     </div>
-    <div class="dev-footer">DEVELOPED BY TATAHEER BUSINESS GROUP &nbsp;|&nbsp; ALL RIGHTS RESERVED 2026 &nbsp;|&nbsp; DEVELOPER CONTACT: +92(321)8555566</div>
+    <div class="dev-footer">© 2026 DISS — All Rights Reserved &nbsp;|&nbsp; Powered by Tataheer Business Group &nbsp;|&nbsp; +923218555566</div>
     <script>window.onload=function(){window.print();}<\/script>
     </body></html>`);
     win.document.close();
@@ -8692,7 +8692,7 @@ function App() {
             </div>
             <button onClick={logout} title="Logout" className="text-gray-300 hover:text-white text-xs px-2 py-1 rounded-lg hover:bg-white/10 transition-all shrink-0">⏏ Out</button>
           </div>
-          <p className="text-xs text-gray-400/60 text-center leading-tight">DEVELOPED BY<br/>TATAHEER BUSINESS GROUP<br/>ALL RIGHTS RESERVED 2026<br/>+92(321)8555566</p>
+          <p className="text-xs text-gray-400/60 text-center leading-tight">© 2026 DISS — All Rights Reserved<br/>Powered by Tataheer Business Group<br/>+923218555566</p>
         </div>
       </aside>
 
