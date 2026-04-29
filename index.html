@@ -904,6 +904,15 @@ function Notifications() {
     persist(notifs.filter(n => n.id !== id));
   };
 
+  const downloadNotif = (n) => {
+    const a = document.createElement('a');
+    a.href = n.data;
+    a.download = n.fileName || (n.fileType === 'pdf' ? `${n.title}.pdf` : `${n.title}.jpg`);
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
   const setCompStatus = (id, status) => {
     const updated = comps.map(c => c.id === id ? { ...c, status } : c);
     S.set(K.COMP, updated); setComps(updated);
@@ -956,9 +965,10 @@ function Notifications() {
                 </p>
                 {n.note && <p className="text-xs text-gray-500 mt-1">{n.note}</p>}
               </div>
-              <div className="flex gap-1 shrink-0">
+              <div className="flex gap-1 shrink-0 flex-wrap">
                 {n.data && <Btn sm variant="outline" onClick={() => { const w = window.open('','_blank','width=800,height=700'); w.document.write(`<!DOCTYPE html><html><head><title>${n.title}</title><style>body{margin:0;background:#111;display:flex;align-items:center;justify-content:center;min-height:100vh}img{max-width:100%;max-height:100vh}iframe{width:100%;height:100vh;border:none}</style></head><body>${n.fileType==='pdf'?`<iframe src="${n.data}"></iframe>`:`<img src="${n.data}"/>`}</body></html>`); w.document.close(); }}>View</Btn>}
-                <Btn sm variant="red" onClick={() => remove(n.id)}>Delete</Btn>
+                {n.data && <Btn sm variant="outline" onClick={() => downloadNotif(n)}>⬇ Download</Btn>}
+                {isAdmin && <Btn sm variant="red" onClick={() => remove(n.id)}>Delete</Btn>}
               </div>
             </Card>
           ))}
@@ -6019,8 +6029,42 @@ function UserAdmin({ onPasswordChange }) {
           <Inp label="Username *" value={form.username} onChange={e => setForm({...form, username: e.target.value})} placeholder="Login username"/>
           <Inp label={form.id ? 'New Password (leave blank to keep)' : 'Password *'} type="password"
             value={form.password} onChange={e => setForm({...form, password: e.target.value})} placeholder="Password"/>
-          <Sel label="Role" value={form.role} onChange={e => setForm({...form, role: e.target.value})}
-            options={[{v:'admin',l:'Admin — Full Access'},{v:'principal',l:'Principal — View All, No Edit/Delete'},{v:'teacher',l:'Teacher — Notifications & Complaints'},{v:'staff',l:'Staff — Fee Collection'}]}/>
+          <Sel label="Role" value={form.role} onChange={e => setForm({...form, role: e.target.value, allowedModules: e.target.value==='custom' ? (form.allowedModules||[]) : undefined})}
+            options={[{v:'admin',l:'Admin — Full Access'},{v:'principal',l:'Principal — View All, No Edit/Delete'},{v:'teacher',l:'Teacher — Notifications & Complaints'},{v:'staff',l:'Staff — Fee Collection'},{v:'custom',l:'Custom — Select Modules Below'}]}/>
+          {form.role === 'custom' && (
+            <div className="border border-gray-200 rounded-xl p-3 mt-1">
+              <p className="text-xs font-bold text-gray-600 uppercase tracking-wide mb-2">Select Allowed Modules</p>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  {id:'dashboard',  label:'Dashboard'},
+                  {id:'students',   label:'Students'},
+                  {id:'feecollect', label:'Student Ledger'},
+                  {id:'fees',       label:'Fee Collection'},
+                  {id:'inventory',  label:'Inventory'},
+                  {id:'expenses',   label:'Expenses'},
+                  {id:'family',     label:'Family Ledger'},
+                  {id:'staff',      label:'Staff & Salary'},
+                  {id:'books',      label:'Books & Vendors'},
+                  {id:'exams',      label:'Exams'},
+                  {id:'cashbook',   label:'Cash Book'},
+                  {id:'notifications', label:'Notifications'},
+                ].map(m => {
+                  const checked = (form.allowedModules||[]).includes(m.id);
+                  return (
+                    <label key={m.id} className="flex items-center gap-2 cursor-pointer text-sm text-gray-700 hover:text-gray-900">
+                      <input type="checkbox" checked={checked}
+                        onChange={e => {
+                          const mods = form.allowedModules || [];
+                          setForm({...form, allowedModules: e.target.checked ? [...mods, m.id] : mods.filter(x => x !== m.id)});
+                        }}
+                        className="w-4 h-4 accent-red-600 rounded"/>
+                      {m.label}
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           <div className="flex gap-2 mt-5">
             <Btn full onClick={save}>{form.id ? 'Update User' : 'Save User'}</Btn>
             <Btn variant="outline" onClick={() => setForm(null)}>Cancel</Btn>
@@ -8547,7 +8591,9 @@ function App() {
     return <ParentPortal currentUser={currentUser} onLogout={() => { clearSession(); setCurrentUser(null); }}/>;
   }
 
-  const NAV = NAV_ALL.filter(n => n.roles.includes(currentUser.role));
+  const NAV = currentUser.role === 'custom'
+    ? NAV_ALL.filter(n => (currentUser.allowedModules || []).includes(n.id))
+    : NAV_ALL.filter(n => n.roles.includes(currentUser.role));
   const go  = (p) => { setPage(p); setSideOpen(false); };
 
   const logout = () => { clearSession(); setCurrentUser(null); setPage('dashboard'); };
