@@ -3703,6 +3703,7 @@ function FeeCollection() {
                         <th className="px-4 py-2">Running Total</th>
                         <th className="px-4 py-2">Note</th>
                         <th className="px-4 py-2 text-right">Print</th>
+                        {isAdmin && <th className="px-4 py-2 text-right text-red-500">Delete</th>}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
@@ -3720,6 +3721,11 @@ function FeeCollection() {
                             <td className="px-4 py-2 text-right">
                               <Btn sm variant="outline" onClick={() => printReceipt(p, stu)}>🖨️</Btn>
                             </td>
+                            {isAdmin && (
+                              <td className="px-4 py-2 text-right">
+                                <Btn sm variant="red" onClick={() => setDelPayConf({ pay: p, stu })}>🗑️ Delete</Btn>
+                              </td>
+                            )}
                           </tr>
                         );
                       })}
