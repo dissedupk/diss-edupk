@@ -243,6 +243,7 @@ const SCHOOL_HEADER = `
 
 function printPage(title, bodyHtml) {
   const win = window.open('', '_blank', 'width=900,height=700');
+  if (!win) { alert('Popup blocked! Please allow popups for this site to print.'); return; }
   const date = new Date().toLocaleDateString('en-PK', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
   win.document.write(`<!DOCTYPE html><html><head><title>${title}</title>
     <style>
@@ -760,7 +761,7 @@ function ParentPortal({ currentUser, onLogout }) {
                   </div>
                   {n.data && (
                     <div className="flex gap-1.5 shrink-0">
-                      <button onClick={() => { const w = window.open('','_blank','width=800,height=700'); w.document.write(`<!DOCTYPE html><html><head><title>${n.title}</title><style>body{margin:0;background:#1a1a1a;display:flex;align-items:center;justify-content:center;min-height:100vh}img{max-width:100%;max-height:100vh;object-fit:contain}iframe{width:100%;height:100vh;border:none}</style></head><body>${n.fileType==='pdf' ? `<iframe src="${n.data}"></iframe>` : `<img src="${n.data}"/>`}</body></html>`); w.document.close(); }}
+                      <button onClick={() => { const w = window.open('','_blank','width=800,height=700'); if(!w){alert('Popup blocked! Please allow popups.');return;} w.document.write(`<!DOCTYPE html><html><head><title>${n.title}</title><style>body{margin:0;background:#1a1a1a;display:flex;align-items:center;justify-content:center;min-height:100vh}img{max-width:100%;max-height:100vh;object-fit:contain}iframe{width:100%;height:100vh;border:none}</style></head><body>${n.fileType==='pdf' ? `<iframe src="${n.data}"></iframe>` : `<img src="${n.data}"/>`}</body></html>`); w.document.close(); }}
                         className="bg-red-600 hover:bg-red-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-all">
                         View / Print
                       </button>
@@ -966,7 +967,7 @@ function Notifications() {
                 {n.note && <p className="text-xs text-gray-500 mt-1">{n.note}</p>}
               </div>
               <div className="flex gap-1 shrink-0 flex-wrap">
-                {n.data && <Btn sm variant="outline" onClick={() => { const w = window.open('','_blank','width=800,height=700'); w.document.write(`<!DOCTYPE html><html><head><title>${n.title}</title><style>body{margin:0;background:#111;display:flex;align-items:center;justify-content:center;min-height:100vh}img{max-width:100%;max-height:100vh}iframe{width:100%;height:100vh;border:none}</style></head><body>${n.fileType==='pdf'?`<iframe src="${n.data}"></iframe>`:`<img src="${n.data}"/>`}</body></html>`); w.document.close(); }}>View</Btn>}
+                {n.data && <Btn sm variant="outline" onClick={() => { const w = window.open('','_blank','width=800,height=700'); if(!w){alert('Popup blocked! Please allow popups.');return;} w.document.write(`<!DOCTYPE html><html><head><title>${n.title}</title><style>body{margin:0;background:#111;display:flex;align-items:center;justify-content:center;min-height:100vh}img{max-width:100%;max-height:100vh}iframe{width:100%;height:100vh;border:none}</style></head><body>${n.fileType==='pdf'?`<iframe src="${n.data}"></iframe>`:`<img src="${n.data}"/>`}</body></html>`); w.document.close(); }}>View</Btn>}
                 {n.data && <Btn sm variant="outline" onClick={() => downloadNotif(n)}>⬇ Download</Btn>}
                 {isAdmin && <Btn sm variant="red" onClick={() => remove(n.id)}>Delete</Btn>}
               </div>
@@ -1001,7 +1002,7 @@ function Notifications() {
               {c.attachData && (
                 <div className="mt-2 flex items-center gap-2">
                   <span className="text-xs text-gray-500">{c.attachType === 'image' ? '🖼️' : '📄'} {c.attachName}</span>
-                  <button onClick={() => { const w = window.open('','_blank','width=800,height=700'); w.document.write(`<!DOCTYPE html><html><head><title>Attachment</title><style>body{margin:0;background:#111;display:flex;align-items:center;justify-content:center;min-height:100vh}img{max-width:100%;max-height:100vh}iframe{width:100%;height:100vh;border:none}</style></head><body>${c.attachType==='pdf'?`<iframe src="${c.attachData}"></iframe>`:`<img src="${c.attachData}"/>`}</body></html>`); w.document.close(); }}
+                  <button onClick={() => { const w = window.open('','_blank','width=800,height=700'); if(!w){alert('Popup blocked! Please allow popups.');return;} w.document.write(`<!DOCTYPE html><html><head><title>Attachment</title><style>body{margin:0;background:#111;display:flex;align-items:center;justify-content:center;min-height:100vh}img{max-width:100%;max-height:100vh}iframe{width:100%;height:100vh;border:none}</style></head><body>${c.attachType==='pdf'?`<iframe src="${c.attachData}"></iframe>`:`<img src="${c.attachData}"/>`}</body></html>`); w.document.close(); }}
                     className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold px-2 py-0.5 rounded-lg transition-all">View Attachment</button>
                 </div>
               )}
@@ -1797,6 +1798,7 @@ function printIdCard(s) {
     ? `<img src="${s.photo}" style="width:80px;height:80px;border-radius:50%;object-fit:cover;border:3px solid #1e3a8a;margin:0 auto 10px;display:block"/>`
     : `<div style="width:80px;height:80px;border-radius:50%;background:#dbeafe;border:3px solid #1e3a8a;margin:0 auto 10px;display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:900;color:#1e3a8a">${s.name[0]}</div>`;
   const win = window.open('', '_blank', 'width=420,height=320');
+  if (!win) { alert('Popup blocked! Please allow popups for this site to print.'); return; }
   win.document.write(`<!DOCTYPE html><html><head><title>ID Card — ${s.name}</title>
   <style>
     *{margin:0;padding:0;box-sizing:border-box}
@@ -2509,6 +2511,7 @@ function Fees() {
     const isFullyPaid = closingBal === 0;
 
     const win = window.open('', '_blank', 'width=420,height=700');
+    if (!win) { alert('Popup blocked! Please allow popups for this site to print.'); return; }
     win.document.write(`<!DOCTYPE html><html><head><title>Fee Receipt</title>
       <style>
         body{font-family:'Segoe UI',Arial,sans-serif;padding:26px;max-width:380px;margin:0 auto;color:#1a1a1a;position:relative}
@@ -3126,6 +3129,7 @@ function FeeCollection() {
     const net      = Math.max(0, origFee - disc); // student net fee
     const balAmt   = net - received; // positive = still owes, negative = advance
     const win = window.open('', '_blank', 'width=420,height=680');
+    if (!win) { alert('Popup blocked! Please allow popups for this site to print.'); return; }
     win.document.write(`<!DOCTYPE html><html><head><title>Fee Receipt</title>
       <style>
         body{font-family:'Segoe UI',Arial,sans-serif;padding:26px;max-width:380px;margin:0 auto;color:#1a1a1a}
@@ -4611,6 +4615,9 @@ function FamilyLedger() {
     return map;
   }, [familyPayments]);
 
+  // Per-student: auto discount = classFee − stu.monthlyFee (if monthlyFee < classFee)
+  const getStuAutoDisc = (st) => { const cf = Number(classFees[st.cls]||0); const sr = Number(st.monthlyFee||0); return sr > 0 && sr < cf ? cf - sr : 0; };
+
   // Per-child status
   const getChildStatus = (stu) => {
     const classFee = Number(classFees[stu.cls] || 0);
@@ -4631,9 +4638,6 @@ function FamilyLedger() {
     if (statuses.some(s => s === 'paid' || s === 'partial' || s === 'advance')) return 'partial';
     return 'unpaid';
   }, [familyStudents, monthPaidMap, classFees]);
-
-  // Per-student: auto discount = classFee − stu.monthlyFee (if monthlyFee < classFee)
-  const getStuAutoDisc = (st) => { const cf = Number(classFees[st.cls]||0); const sr = Number(st.monthlyFee||0); return sr > 0 && sr < cf ? cf - sr : 0; };
   const totalDue              = familyStudents.reduce((s, st) => s + Number(classFees[st.cls] || 0), 0);
   const totalPaidMonth        = familyStudents.reduce((s, st) => s + (monthPaidMap[st.id] || 0), 0);
   const totalDiscount         = familyStudents.reduce((s, st) => s + getStuAutoDisc(st), 0);
@@ -4730,6 +4734,7 @@ function FamilyLedger() {
     }).join('');
     const n = pays.length;
     const win = window.open('', '_blank', 'width=500,height=680');
+    if (!win) { alert('Popup blocked! Please allow popups for this site to print.'); return; }
     win.document.write(`<!DOCTYPE html><html><head><title>Family Payment</title>
       <style>
         body{font-family:'Segoe UI',Arial,sans-serif;padding:26px;max-width:460px;margin:0 auto;color:#1a1a1a}
@@ -4783,6 +4788,7 @@ function FamilyLedger() {
 
   const printIndividualReceipt = (pay, stu) => {
     const win = window.open('', '_blank', 'width=420,height=580');
+    if (!win) { alert('Popup blocked! Please allow popups for this site to print.'); return; }
     win.document.write(`<!DOCTYPE html><html><head><title>Fee Receipt</title>
       <style>
         body{font-family:'Segoe UI',Arial,sans-serif;padding:26px;max-width:380px;margin:0 auto;color:#1a1a1a}
@@ -4903,6 +4909,7 @@ function FamilyLedger() {
     }).join('');
     const grandTotal = familyStudents.reduce((s,stu)=>s+getBooksForStu(stu).reduce((t,b)=>t+Number(b.qty)*Number(b.price),0),0);
     const win = window.open('', '_blank', 'width=900,height=700');
+    if (!win) { alert('Popup blocked! Please allow popups for this site to print.'); return; }
     win.document.write(`<!DOCTYPE html><html><head><title>Book Requirements — ${selFamilyLabel}</title>
       <style>*{box-sizing:border-box}body{font-family:'Segoe UI',Arial,sans-serif;padding:28px;color:#1a1a1a;font-size:12px}
       table{width:100%;border-collapse:collapse}th{background:#1e3a8a;color:#fff;padding:7px 10px;text-align:left;font-size:11px;text-transform:uppercase}
@@ -5539,6 +5546,7 @@ function Staff() {
 
   const printSlip = (pay, member) => {
     const win = window.open('', '_blank', 'width=420,height=580');
+    if (!win) { alert('Popup blocked! Please allow popups for this site to print.'); return; }
     win.document.write(`<!DOCTYPE html><html><head><title>Salary Slip</title>
       <style>
         body{font-family:'Segoe UI',Arial,sans-serif;padding:26px;max-width:380px;margin:0 auto;color:#1a1a1a}
@@ -5589,8 +5597,8 @@ function Staff() {
 
   const printStaff = () => {
     const rows = staff.map((m,i)=>{
-      const pay = monthPayMap[m.id];
-      return `<tr><td>${i+1}</td><td><b>${m.name}</b></td><td>${m.father||'—'}</td><td><span class="badge b-blue">${m.role}</span></td><td>Rs. ${Number(m.salary).toLocaleString()}</td><td>${m.contact||'—'}</td><td><span class="badge ${pay?'b-green':'b-red'}">${pay?'Paid Rs.'+Number(pay.amount).toLocaleString():'Unpaid'}</span></td></tr>`;
+      const paidAmt = monthPaidTotalMap[m.id] || 0;
+      return `<tr><td>${i+1}</td><td><b>${m.name}</b></td><td>${m.father||'—'}</td><td><span class="badge b-blue">${m.role}</span></td><td>Rs. ${Number(m.salary).toLocaleString()}</td><td>${m.contact||'—'}</td><td><span class="badge ${paidAmt>0?'b-green':'b-red'}">${paidAmt>0?'Paid Rs.'+paidAmt.toLocaleString():'Unpaid'}</span></td></tr>`;
     }).join('');
     printPage(`Staff & Salary — ${MONTHS[vm]} ${vy}`, `
       <h2>Staff & Salary — ${MONTHS[vm]} ${vy}</h2>
@@ -6209,6 +6217,7 @@ function VendorBooks() {
 
   const printVpay = (pay, vendor) => {
     const win = window.open('', '_blank', 'width=420,height=560');
+    if (!win) { alert('Popup blocked! Please allow popups for this site to print.'); return; }
     win.document.write(`<!DOCTYPE html><html><head><title>Vendor Payment</title>
       <style>
         body{font-family:'Segoe UI',Arial,sans-serif;padding:26px;max-width:380px;margin:0 auto;color:#1a1a1a}
@@ -6885,6 +6894,7 @@ function Exams() {
     }).join('');
 
     const win = window.open('','_blank','width=820,height=900');
+    if (!win) { alert('Popup blocked! Please allow popups for this site to print.'); return; }
     win.document.write(`<!DOCTYPE html><html><head><title>Question Paper</title><style>
       *{box-sizing:border-box;margin:0;padding:0}
       body{font-family:'Segoe UI',Arial,sans-serif;padding:0.5in;color:#111;font-size:12pt;line-height:1.4}
@@ -7004,6 +7014,7 @@ function Exams() {
     if (!dsRows.length) return alert('No date sheet entries yet.');
     const rows = dsRows.map((r,i) => `<tr><td>${i+1}</td><td><b>${r.subject||'—'}</b></td><td>${r.date||'—'}</td><td>${r.day||'—'}</td><td>${r.startTime||'—'} – ${r.endTime||'—'}</td></tr>`).join('');
     const win = window.open('','_blank','width=750,height=650');
+    if (!win) { alert('Popup blocked! Please allow popups for this site to print.'); return; }
     win.document.write(`<!DOCTYPE html><html><head><title>Date Sheet</title>
     <style>
       *{box-sizing:border-box}body{font-family:'Segoe UI',Arial,sans-serif;padding:28px;color:#1a1a1a;font-size:12px}
@@ -7071,6 +7082,7 @@ function Exams() {
     }).join('');
 
     const win = window.open('','_blank','width=700,height=780');
+    if (!win) { alert('Popup blocked! Please allow popups for this site to print.'); return; }
     win.document.write(`<!DOCTYPE html><html><head><title>Result Card</title>
     <style>
       *{box-sizing:border-box}body{font-family:'Segoe UI',Arial,sans-serif;padding:28px;color:#1a1a1a;font-size:12px;max-width:680px;margin:auto}
@@ -7178,6 +7190,7 @@ function Exams() {
         </div>`;
     }).join('');
     const win = window.open('','_blank','width=750,height=700');
+    if (!win) { alert('Popup blocked! Please allow popups for this site to print.'); return; }
     win.document.write(`<!DOCTYPE html><html><head><title>Result Cards</title><style>*{box-sizing:border-box}body{font-family:'Segoe UI',Arial,sans-serif;padding:20px;color:#1a1a1a}@media print{body{padding:8px}button{display:none!important}}</style></head><body>${cards}<script>window.onload=function(){window.print();}<\/script></body></html>`);
     win.document.close();
   };
