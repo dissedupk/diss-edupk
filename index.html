@@ -567,17 +567,25 @@ function ParentPortal({ currentUser, onLogout }) {
   useEffect(() => {
     if (!window._fbDB) return;
     const keys = [K.STU, K.CF, K.PAY, K.NOTIF, K.COMP];
-    const refs = keys.map(k => {
-      const ref = window._fbDB.ref('sms/' + k);
-      ref.on('value', snap => {
-        const val = snap.val();
-        if (val !== null && val !== undefined) {
-          localStorage.setItem(k, JSON.stringify(val));
-          setTick(t => t + 1);
-        }
+    let refs = [];
+    const attach = () => {
+      refs = keys.map(k => {
+        const ref = window._fbDB.ref('sms/' + k);
+        ref.on('value', snap => {
+          const val = snap.val();
+          if (val !== null && val !== undefined) {
+            localStorage.setItem(k, JSON.stringify(val));
+            setTick(t => t + 1);
+          }
+        });
+        return ref;
       });
-      return ref;
-    });
+    };
+    if (window._fbAuthReady) { attach(); }
+    else {
+      const iv = setInterval(() => { if (window._fbAuthReady) { clearInterval(iv); attach(); } }, 200);
+      return () => { clearInterval(iv); refs.forEach(r => r.off('value')); };
+    }
     return () => refs.forEach(r => r.off('value'));
   }, []);
 
@@ -8802,14 +8810,14 @@ function App() {
   // STEP 1: Render app immediately from localStorage — never block on Firebase
   // Remove any old session that was saved in localStorage by the previous version
   localStorage.removeItem('sms_sess');
+  window._fbSyncDone = false;
+  window._fbAuthReady = false;
   const loading = document.getElementById('fb-loading');
   if (loading) loading.remove();
   ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
 
   // STEP 2: Sync Firebase — wait for auth to be ready first, then pull data
   const pageLoadTime = Date.now();
-  window._fbSyncDone = false;
-  window._fbAuthReady = false;
   let _syncDone = false;
   firebase.auth().onAuthStateChanged(async function(user) {
     if (!user || _syncDone) return;
@@ -8818,20 +8826,27 @@ function App() {
 
     try {
       const fbFetch = window._fbDB.ref('sms').once('value');
-      const fbTimeout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 10000));
+      const fbTimeout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 12000));
       const snap = await Promise.race([fbFetch, fbTimeout]);
-      const data = snap.val();
-      if (data) {
-        let changed = false;
-        Object.keys(data).forEach(k => {
-          const current = localStorage.getItem(k);
-          const incoming = JSON.stringify(data[k]);
-          if (current !== incoming) { localStorage.setItem(k, incoming); changed = true; }
-        });
-        if (changed) {
-          if (window._smsRefresh) window._smsRefresh();
+      const cloudData = snap.val() || {};
+
+      let changed = false;
+      // All storage keys the app uses
+      const ALL_KEYS = ['sms_stu','sms_inv','sms_tx','sms_cf','sms_pay','sms_exp','sms_af','sms_staff','sms_spay','sms_bl','sms_ds','sms_rs','sms_vend','sms_sbook','sms_users','sms_vpay','sms_acct','sms_cbook','sms_perm','sms_audit','sms_preq','sms_notif','sms_comp'];
+
+      ALL_KEYS.forEach(k => {
+        const localRaw = localStorage.getItem(k);
+        if (cloudData[k] !== undefined && cloudData[k] !== null) {
+          // Cloud has data — cloud wins, update local
+          const cloudRaw = JSON.stringify(cloudData[k]);
+          if (localRaw !== cloudRaw) { localStorage.setItem(k, cloudRaw); changed = true; }
+        } else if (localRaw !== null && localRaw !== 'null') {
+          // Cloud is empty but local has data — upload local to cloud (seed Firebase)
+          try { window._fbDB.ref('sms/' + k).set(JSON.parse(localRaw)).catch(() => {}); } catch(e) {}
         }
-      }
+      });
+
+      if (changed && window._smsRefresh) window._smsRefresh();
       window._fbConnected = true;
     } catch(e) {
       window._fbConnected = false;

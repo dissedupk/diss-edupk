@@ -2,9 +2,9 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "school-management",
-      "runtimeExecutable": "powershell",
-      "runtimeArgs": ["-Command", "& { $l = [System.Net.HttpListener]::new(); $l.Prefixes.Add('http://localhost:3000/'); $l.Start(); while($l.IsListening){ $ctx=$l.GetContext(); $req=$ctx.Request; $res=$ctx.Response; $path=Join-Path 'C:\\Users\\Tajmmul\\OneDrive\\Documents\\claude ai\\tataheer traders' ($req.RawUrl.TrimStart('/')); if(-not $path -or $path -eq 'C:\\Users\\Tajmmul\\OneDrive\\Documents\\claude ai\\tataheer traders\\' ){$path='C:\\Users\\Tajmmul\\OneDrive\\Documents\\claude ai\\tataheer traders\\index.html'}; if(Test-Path $path){ try { $buf=[System.IO.File]::ReadAllBytes($path); $res.SendChunked=$true; $res.OutputStream.Write($buf,0,$buf.Length) } catch {} };$res.OutputStream.Close() } }"],
+      "name": "diss-app",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["serve", "-p", "3000", "."],
       "port": 3000
     }
   ]

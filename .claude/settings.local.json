@@ -54,7 +54,8 @@
       "Bash(copy \"C:\\\\Users\\\\Tajmmul\\\\OneDrive\\\\Documents\\\\claude ai\\\\tataheer traders\\\\index.html\" \"C:\\\\Users\\\\Tajmmul\\\\OneDrive\\\\Documents\\\\claude ai\\\\tataheer traders\\\\diss-app\\\\index.html\")",
       "Bash(gh auth *)",
       "Bash(git -C \"C:\\\\Users\\\\Tajmmul\\\\OneDrive\\\\Documents\\\\claude ai\\\\tataheer traders\" push origin main)",
-      "Bash(firebase deploy *)"
+      "Bash(firebase deploy *)",
+      "Bash(start \"\" \"C:\\\\Users\\\\Tajmmul\\\\OneDrive\\\\Documents\\\\claude ai\\\\tataheer traders\\\\diss-app\\\\index.html\")"
     ]
   }
 }
