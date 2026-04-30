@@ -8568,7 +8568,9 @@ const NAV_ALL = [
 function App() {
   const [currentUser, setCurrentUser] = useState(() => getSession());
   const [page, setPage]     = useState(() => sessionStorage.getItem('_currentPage') || 'dashboard');
+  const [syncTick, setSyncTick] = useState(0);
   const [sideOpen, setSideOpen] = useState(false);
+  React.useEffect(() => { window._smsRefresh = () => setSyncTick(t => t + 1); return () => { window._smsRefresh = null; }; }, []);
   const [staffCanModify, setStaffCanModify] = useState(() => S.get(K.PERM, {}).staffCanModify || false);
   const [showCalc, setShowCalc] = useState(false);
   const [calcDisp, setCalcDisp] = useState('0');
@@ -8719,7 +8721,7 @@ function App() {
           </div>
         </header>
 
-        <main className="flex-1 p-4 sm:p-6 overflow-y-auto">
+        <main key={syncTick} className="flex-1 p-4 sm:p-6 overflow-y-auto">
           {page === 'dashboard'  && <Dashboard setPage={setPage}/>}
           {page === 'students'   && <Students/>}
           {page === 'feecollect' && <FeeCollection/>}
@@ -8765,10 +8767,9 @@ function App() {
           const incoming = JSON.stringify(data[k]);
           if (current !== incoming) { localStorage.setItem(k, incoming); changed = true; }
         });
-        // If cloud had newer data, reload once (guard against loops via sessionStorage)
-        if (changed && !sessionStorage.getItem('_fbSynced')) {
-          sessionStorage.setItem('_fbSynced', '1');
-          location.reload();
+        // If cloud had newer data, refresh React state (no page reload)
+        if (changed) {
+          if (window._smsRefresh) window._smsRefresh();
         }
       }
       window._fbConnected = true;
@@ -8790,7 +8791,7 @@ function App() {
           const freshData = fresh.val();
           if (freshData) {
             Object.keys(freshData).forEach(k => localStorage.setItem(k, JSON.stringify(freshData[k])));
-            if (!window._reloading) { window._reloading = true; location.reload(); }
+            if (window._smsRefresh) window._smsRefresh();
           }
         } catch(e) {}
       });
