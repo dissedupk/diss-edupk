@@ -132,12 +132,10 @@ const S = {
   get: (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } },
   set: (k, v) => {
     localStorage.setItem(k, JSON.stringify(v));
-    try {
-      if (window._fbDB && firebase.auth().currentUser) {
-        window._fbDB.ref('sms/' + k).set(v);
-        window._fbDB.ref('sms_meta/lastUpdate').set({ time: Date.now(), writer: window._sessionId });
-      }
-    } catch(e) {}
+    if (window._fbAuthReady && window._fbDB) {
+      window._fbDB.ref('sms/' + k).set(v).catch(() => {});
+      window._fbDB.ref('sms_meta/lastUpdate').set({ time: Date.now(), writer: window._sessionId }).catch(() => {});
+    }
   }
 };
 const K = { STU:'sms_stu', INV:'sms_inv', TX:'sms_tx', CF:'sms_cf', PAY:'sms_pay', EXP:'sms_exp', AF:'sms_af', STAFF:'sms_staff', SPAY:'sms_spay', BL:'sms_bl', DS:'sms_ds', RS:'sms_rs', VENDOR:'sms_vend', SBOOK:'sms_sbook', USERS:'sms_users', SESS:'sms_sess', VPAY:'sms_vpay', ACCT:'sms_acct', CBOOK:'sms_cbook', PERM:'sms_perm', AUDIT:'sms_audit', PREQ:'sms_preq', NOTIF:'sms_notif', COMP:'sms_comp' };
@@ -8811,10 +8809,12 @@ function App() {
   // STEP 2: Sync Firebase — wait for auth to be ready first, then pull data
   const pageLoadTime = Date.now();
   window._fbSyncDone = false;
+  window._fbAuthReady = false;
   let _syncDone = false;
   firebase.auth().onAuthStateChanged(async function(user) {
     if (!user || _syncDone) return;
     _syncDone = true;
+    window._fbAuthReady = true; // auth is confirmed — S.set() can now write to Firebase
 
     try {
       const fbFetch = window._fbDB.ref('sms').once('value');
