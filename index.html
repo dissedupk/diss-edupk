@@ -9,7 +9,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes"/>
   <meta name="apple-mobile-web-app-title" content="DISS"/>
   <link rel="apple-touch-icon" href="diss-app/logo diss/for main sreeen when loading.png"/>
-  <script>if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js'));}</script>
+  <script>if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js'));}
+  window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();window._pwaInstallPrompt=e;document.dispatchEvent(new Event('pwaready'));});</script>
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -132,7 +133,7 @@ const S = {
   set: (k, v) => {
     localStorage.setItem(k, JSON.stringify(v));
     try {
-      if (window._fbDB) {
+      if (window._fbDB && firebase.auth().currentUser) {
         window._fbDB.ref('sms/' + k).set(v);
         window._fbDB.ref('sms_meta/lastUpdate').set({ time: Date.now(), writer: window._sessionId });
       }
@@ -372,7 +373,24 @@ function LoginScreen({ onLogin }) {
 
   const switchTab = (t) => { setTab(t); setErr(''); setRegMode(false); setRegMsg(''); setUname(''); setPass(''); };
 
-  const login = () => {
+  const [syncing, setSyncing] = useState(!window._fbSyncDone);
+  React.useEffect(() => {
+    if (window._fbSyncDone) { setSyncing(false); return; }
+    const iv = setInterval(() => { if (window._fbSyncDone) { setSyncing(false); clearInterval(iv); } }, 300);
+    const tm = setTimeout(() => { setSyncing(false); clearInterval(iv); }, 8000);
+    return () => { clearInterval(iv); clearTimeout(tm); };
+  }, []);
+
+  const login = async () => {
+    // If Firebase hasn't synced yet, try to wait up to 5s
+    if (!window._fbSyncDone && window._fbDB) {
+      setSyncing(true);
+      await new Promise(res => {
+        const iv = setInterval(() => { if (window._fbSyncDone) { clearInterval(iv); res(); } }, 200);
+        setTimeout(() => { clearInterval(iv); res(); }, 5000);
+      });
+      setSyncing(false);
+    }
     let users = S.get(K.USERS, []);
     if (users.length === 0) {
       const admin = { id: uid(), username: 'admin', password: 'admin', name: 'Administrator', role: 'admin' };
@@ -413,6 +431,14 @@ function LoginScreen({ onLogin }) {
           <h2 className="text-base font-bold text-gray-800">School Management System</h2>
           <p className="text-xs text-gray-400 mt-0.5">Discovery International School System</p>
         </div>
+
+        {/* Sync banner */}
+        {syncing && (
+          <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 text-blue-700 text-xs px-3 py-2 rounded-xl mb-4">
+            <span className="animate-spin inline-block">⏳</span>
+            <span>Syncing data from cloud, please wait…</span>
+          </div>
+        )}
 
         {/* Tab Switcher */}
         <div className="flex rounded-xl overflow-hidden border border-gray-200 mb-5">
@@ -8583,7 +8609,14 @@ function App() {
   const [page, setPage]     = useState(() => sessionStorage.getItem('_currentPage') || 'dashboard');
   const [syncTick, setSyncTick] = useState(0);
   const [sideOpen, setSideOpen] = useState(false);
+  const [canInstall, setCanInstall] = useState(false);
   React.useEffect(() => { window._smsRefresh = () => setSyncTick(t => t + 1); return () => { window._smsRefresh = null; }; }, []);
+  React.useEffect(() => {
+    if (window._pwaInstallPrompt) setCanInstall(true);
+    const h = () => setCanInstall(true);
+    document.addEventListener('pwaready', h);
+    return () => document.removeEventListener('pwaready', h);
+  }, []);
   const [staffCanModify, setStaffCanModify] = useState(() => S.get(K.PERM, {}).staffCanModify || false);
   const [showCalc, setShowCalc] = useState(false);
   const [calcDisp, setCalcDisp] = useState('0');
@@ -8700,6 +8733,16 @@ function App() {
         </div>
 
         <div className="p-4 border-t border-gray-600/50">
+          {canInstall && (
+            <button onClick={async () => {
+              if (!window._pwaInstallPrompt) return;
+              window._pwaInstallPrompt.prompt();
+              const { outcome } = await window._pwaInstallPrompt.userChoice;
+              if (outcome === 'accepted') { setCanInstall(false); window._pwaInstallPrompt = null; }
+            }} className="w-full flex items-center justify-center gap-2 px-3 py-2 mb-3 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl transition-all">
+              📲 Install App
+            </button>
+          )}
           <div className="flex items-center gap-2 mb-2">
             <div className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center text-xs font-bold">{currentUser.name[0]}</div>
             <div className="flex-1 min-w-0">
@@ -8765,12 +8808,17 @@ function App() {
   if (loading) loading.remove();
   ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
 
-  // STEP 2: Sync Firebase in background AFTER app is already running
+  // STEP 2: Sync Firebase — wait for auth to be ready first, then pull data
   const pageLoadTime = Date.now();
-  setTimeout(async function() {
+  window._fbSyncDone = false;
+  let _syncDone = false;
+  firebase.auth().onAuthStateChanged(async function(user) {
+    if (!user || _syncDone) return;
+    _syncDone = true;
+
     try {
       const fbFetch = window._fbDB.ref('sms').once('value');
-      const fbTimeout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000));
+      const fbTimeout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 10000));
       const snap = await Promise.race([fbFetch, fbTimeout]);
       const data = snap.val();
       if (data) {
@@ -8780,7 +8828,6 @@ function App() {
           const incoming = JSON.stringify(data[k]);
           if (current !== incoming) { localStorage.setItem(k, incoming); changed = true; }
         });
-        // If cloud had newer data, refresh React state (no page reload)
         if (changed) {
           if (window._smsRefresh) window._smsRefresh();
         }
@@ -8790,8 +8837,9 @@ function App() {
       window._fbConnected = false;
       console.warn('Firebase background sync failed:', e);
     }
+    window._fbSyncDone = true;
 
-    // STEP 3: Listen for changes from other devices — silent background pull only
+    // STEP 3: Listen for changes from other devices
     try {
       let listenerReady = false;
       window._fbDB.ref('sms_meta/lastUpdate').on('value', async snap => {
@@ -8809,7 +8857,7 @@ function App() {
         } catch(e) {}
       });
     } catch(e) {}
-  }, 500); // small delay so app renders first
+  });
 })();
 </script>
 </body>
