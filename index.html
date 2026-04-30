@@ -379,29 +379,61 @@ function LoginScreen({ onLogin }) {
     return () => { clearInterval(iv); clearTimeout(tm); };
   }, []);
 
+  const [loginAttempts, setLoginAttempts] = useState(0);
+  const [showRecovery, setShowRecovery]   = useState(false);
+  const [recoveryCode, setRecoveryCode]   = useState('');
+  const [recoveryErr, setRecoveryErr]     = useState('');
+
   const login = async () => {
-    // If Firebase hasn't synced yet, try to wait up to 5s
+    // Wait for Firebase sync (up to 6s)
     if (!window._fbSyncDone && window._fbDB) {
       setSyncing(true);
       await new Promise(res => {
         const iv = setInterval(() => { if (window._fbSyncDone) { clearInterval(iv); res(); } }, 200);
-        setTimeout(() => { clearInterval(iv); res(); }, 5000);
+        setTimeout(() => { clearInterval(iv); res(); }, 6000);
       });
       setSyncing(false);
     }
     let users = S.get(K.USERS, []);
-    if (users.length === 0) {
+    // Always ensure at least one admin exists
+    if (!users.find(u => u.role === 'admin')) {
       const admin = { id: uid(), username: 'admin', password: 'admin', name: 'Administrator', role: 'admin' };
-      S.set(K.USERS, [admin]); users = [admin];
+      users = [...users, admin];
+      S.set(K.USERS, users);
     }
     const user = users.find(u => u.username === uname.trim() && u.password === pass);
-    if (!user) { setErr('Invalid username or password.'); return; }
+    if (!user) {
+      const attempts = loginAttempts + 1;
+      setLoginAttempts(attempts);
+      setErr('Invalid username or password.');
+      if (attempts >= 2) setShowRecovery(true);
+      return;
+    }
     if (tab === 'staff' && user.role === 'parent') { setErr('Please use the Parent Login tab.'); return; }
     if (tab === 'parent' && user.role !== 'parent') { setErr('Please use the Admin / Staff Login tab.'); return; }
     if (user.status === 'pending') { setErr('Your account is pending admin approval. Please wait.'); return; }
     if (user.status === 'rejected') { setErr('Your registration was rejected. Contact the school office.'); return; }
     if (user.disabled) { setErr('Your account has been disabled. Please contact the school office.'); return; }
     setSession(user); onLogin(user);
+  };
+
+  const emergencyReset = () => {
+    setRecoveryErr('');
+    const perm = S.get(K.PERM, {});
+    const masterCode = perm.masterCode || '1234';
+    if (recoveryCode !== masterCode) { setRecoveryErr('Wrong master code. Default is: 1234'); return; }
+    // Reset or create admin account, keep all other users
+    let users = S.get(K.USERS, []);
+    const hasAdmin = users.find(u => u.role === 'admin');
+    if (hasAdmin) {
+      users = users.map(u => u.role === 'admin' ? { ...u, username: 'admin', password: 'admin', disabled: false } : u);
+    } else {
+      users = [...users, { id: uid(), username: 'admin', password: 'admin', name: 'Administrator', role: 'admin' }];
+    }
+    S.set(K.USERS, users);
+    setUname('admin'); setPass('admin'); setErr(''); setRecoveryCode('');
+    setShowRecovery(false); setLoginAttempts(0);
+    alert('✅ Admin access restored!\nUsername: admin  |  Password: admin\nClick Sign In to continue.');
   };
 
   const register = () => {
@@ -473,11 +505,40 @@ function LoginScreen({ onLogin }) {
                 </button>
               </div>
             </div>
-            <button onClick={login}
-              className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded-xl transition-all text-sm">
-              Sign In
+            <button onClick={login} disabled={syncing}
+              className="w-full bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-bold py-2.5 rounded-xl transition-all text-sm">
+              {syncing ? '⏳ Syncing...' : 'Sign In'}
             </button>
-            <p className="text-center text-xs text-gray-400 mt-4">Default: <strong>admin</strong> / <strong>admin</strong></p>
+            <p className="text-center text-xs text-gray-400 mt-3">Default: <strong>admin</strong> / <strong>admin</strong></p>
+
+            {/* Emergency Recovery Panel */}
+            {showRecovery && (
+              <div className="mt-4 border border-amber-300 bg-amber-50 rounded-xl p-4">
+                <p className="text-xs font-bold text-amber-800 mb-1">🆘 Emergency Admin Recovery</p>
+                <p className="text-xs text-amber-700 mb-3">Enter master code to reset admin password back to default.</p>
+                <input
+                  type="password" value={recoveryCode}
+                  onChange={e => { setRecoveryCode(e.target.value); setRecoveryErr(''); }}
+                  onKeyDown={e => e.key === 'Enter' && emergencyReset()}
+                  placeholder="Master code (default: 1234)"
+                  className="w-full border border-amber-300 rounded-lg px-3 py-2 text-sm mb-2 outline-none focus:border-amber-500"/>
+                {recoveryErr && <p className="text-xs text-red-600 mb-2">{recoveryErr}</p>}
+                <div className="flex gap-2">
+                  <button onClick={emergencyReset} className="flex-1 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold py-2 rounded-lg">
+                    🔓 Restore Admin
+                  </button>
+                  <button onClick={() => { setShowRecovery(false); setRecoveryCode(''); setRecoveryErr(''); }}
+                    className="text-xs text-gray-500 px-3 py-2 rounded-lg hover:bg-gray-100">Cancel</button>
+                </div>
+              </div>
+            )}
+            {!showRecovery && loginAttempts >= 1 && (
+              <p className="text-center mt-2">
+                <button onClick={() => setShowRecovery(true)} className="text-xs text-gray-400 hover:text-amber-600 underline">
+                  Forgot password? Emergency reset
+                </button>
+              </p>
+            )}
           </>
         )}
 
