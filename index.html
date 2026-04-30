@@ -3361,8 +3361,9 @@ function FeeCollection() {
     return data.map(r => ({ ...r, balAfter: r.outstanding - r.allocate }));
   }, [familyMod, familyForm.totalAmount, allTimePaidMapFC, classFees]);
 
-  const canCollect = isAdmin || staffCanModify || isPrincipal; // principal CAN collect new fees
-  const canModify  = isAdmin || staffCanModify;                 // principal CANNOT edit/delete existing
+  const isAccountant = role === 'accountant';
+  const canCollect = isAdmin || staffCanModify || isPrincipal || isAccountant;
+  const canModify  = isAdmin || staffCanModify || isAccountant;
 
   const checkPinThenDo = (action, pay, stu) => {
     if (canModify) {
@@ -4432,8 +4433,9 @@ function FeeCollection() {
 function Expenses() {
   const { role } = React.useContext(UserContext);
   const isAdmin     = role === 'admin';
-  const isPrincipal = role === 'principal';
-  const canAdd      = isAdmin || isPrincipal; // principal can add expenses
+  const isPrincipal  = role === 'principal';
+  const isAccountant = role === 'accountant';
+  const canAdd       = isAdmin || isPrincipal || isAccountant;
   const canWrite    = isAdmin;                // only admin can edit/delete
   const [list, setList] = useState(() => S.get(K.EXP, []));
   const [form, setForm] = useState(null);
@@ -4543,8 +4545,8 @@ function Expenses() {
                       <td className="px-4 py-3 hidden sm:table-cell text-gray-400 text-xs">{e.note || '—'}</td>
                       <td className="px-4 py-3 text-right font-bold text-red-600">Rs. {Number(e.amount).toLocaleString()}</td>
                       <td className="px-4 py-3 text-right space-x-1">
-                        {isAdmin && <Btn sm variant="outline" onClick={() => window.requireMasterCode(() => setForm({...e}), `Edit expense: ${e.title}`)}>Edit</Btn>}
-                        {isAdmin && <Btn sm variant="red" onClick={() => window.requireMasterCode(() => setDelId(e.id), `Delete expense: ${e.title}`)}>Del</Btn>}
+                        {(isAdmin || isAccountant) && <Btn sm variant="outline" onClick={() => window.requireMasterCode(() => setForm({...e}), `Edit expense: ${e.title}`)}>Edit</Btn>}
+                        {(isAdmin || isAccountant) && <Btn sm variant="red" onClick={() => window.requireMasterCode(() => setDelId(e.id), `Delete expense: ${e.title}`)}>Del</Btn>}
                       </td>
                     </tr>
                   ))}
@@ -6016,17 +6018,20 @@ function UserAdmin({ onPasswordChange }) {
 
   const ROLE_DEFAULT_NAMES = {
     admin: 'Admin — Full Access',
-    principal: 'Principal — View All, No Edit/Delete',
+    principal: 'Principal — Add & View Only',
+    accountant: 'Accountant — Fees, Cash Book & Expenses',
     teacher: 'Teacher — Notifications & Complaints',
     staff: 'Staff — Fee Collection',
     parent: 'Parent',
     custom: '',
   };
   const roleBadge = (r, rName) => {
-    const map = { admin:'blue', principal:'green', teacher:'purple', staff:'gray', parent:'yellow', custom:'red' };
-    const defaultLabel = { admin:'🔐 Admin', principal:'🎓 Principal', teacher:'📖 Teacher', staff:'👤 Staff', parent:'👨‍👩‍👧 Parent', custom:'⚙️ Custom' };
+    const map = { admin:'blue', principal:'green', accountant:'teal', teacher:'purple', staff:'gray', parent:'yellow', custom:'red' };
+    const defaultLabel = { admin:'🔐 Admin', principal:'🎓 Principal', accountant:'🧾 Accountant', teacher:'📖 Teacher', staff:'👤 Staff', parent:'👨‍👩‍👧 Parent', custom:'⚙️ Custom' };
     const display = rName || defaultLabel[r] || r;
-    return <Badge color={map[r]||'gray'}>{display}</Badge>;
+    const colorMap = { blue:'bg-blue-100 text-blue-700', green:'bg-green-100 text-green-700', teal:'bg-teal-100 text-teal-700', purple:'bg-purple-100 text-purple-700', gray:'bg-gray-100 text-gray-600', yellow:'bg-yellow-100 text-yellow-700', red:'bg-red-100 text-red-700' };
+    const col = map[r]||'gray';
+    return <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${colorMap[col]||'bg-gray-100 text-gray-600'}`}>{display}</span>;
   };
 
   const pendingCount = preqs.filter(r => users.find(u => u.id===r.id && u.status==='pending')).length;
@@ -6140,42 +6145,74 @@ function UserAdmin({ onPasswordChange }) {
           <Inp label="Username *" value={form.username} onChange={e => setForm({...form, username: e.target.value})} placeholder="Login username"/>
           <Inp label={form.id ? 'New Password (leave blank to keep)' : 'Password *'} type="password"
             value={form.password} onChange={e => setForm({...form, password: e.target.value})} placeholder="Password"/>
-          <Sel label="Role" value={form.role} onChange={e => setForm({...form, role: e.target.value, allowedModules: e.target.value==='custom' ? (form.allowedModules||[]) : undefined})}
-            options={[{v:'admin',l:'Admin — Full Access'},{v:'principal',l:'Principal — View All, No Edit/Delete'},{v:'teacher',l:'Teacher — Notifications & Complaints'},{v:'staff',l:'Staff — Fee Collection'},{v:'custom',l:'Custom — Select Modules Below'}]}/>
+
+          {/* Role Selector */}
+          <div className="mb-3">
+            <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Role *</label>
+            <select value={form.role}
+              onChange={e => setForm({...form, role: e.target.value, allowedModules: e.target.value==='custom' ? (form.allowedModules||[]) : undefined})}
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-800 outline-none focus:border-red-400 focus:ring-2 focus:ring-red-100 bg-white">
+              <option value="admin">🔐 Admin — Full Access (View, Add, Edit, Delete)</option>
+              <option value="principal">🎓 Principal — Add &amp; View Only</option>
+              <option value="accountant">🧾 Accountant — Fees, Cash Book &amp; Expenses</option>
+              <option value="teacher">📖 Teacher — Notifications &amp; Complaints</option>
+              <option value="custom">⚙️ Custom — Select Modules Manually</option>
+            </select>
+
+            {/* Role description hints */}
+            {form.role === 'admin'      && <p className="text-xs text-blue-600 mt-1.5 bg-blue-50 px-3 py-1.5 rounded-lg">✅ Full system access. Can View, Add, Edit and Delete everything.</p>}
+            {form.role === 'principal'  && <p className="text-xs text-green-700 mt-1.5 bg-green-50 px-3 py-1.5 rounded-lg">👁️ Can view all modules and add new entries. Edit/Delete buttons are hidden.</p>}
+            {form.role === 'accountant' && <p className="text-xs text-teal-700 mt-1.5 bg-teal-50 px-3 py-1.5 rounded-lg">🧾 Access limited to: Fees, Student Ledger, Cash Book, Expenses, Family Ledger.</p>}
+            {form.role === 'teacher'    && <p className="text-xs text-purple-700 mt-1.5 bg-purple-50 px-3 py-1.5 rounded-lg">📢 Access limited to: Notifications and Complaints only.</p>}
+          </div>
+
+          {/* Custom Module Selector */}
           {form.role === 'custom' && (
-            <div className="border border-gray-200 rounded-xl p-3 mt-1">
-              <p className="text-xs font-bold text-gray-600 uppercase tracking-wide mb-2">Select Allowed Modules</p>
+            <div className="border-2 border-dashed border-red-200 bg-red-50/40 rounded-xl p-4 mt-1">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-sm font-bold text-gray-700">⚙️ Select Allowed Modules</span>
+                <span className="relative group cursor-help">
+                  <span className="w-4 h-4 rounded-full bg-gray-400 text-white text-xs font-bold flex items-center justify-center inline-flex">i</span>
+                  <span className="absolute left-6 top-0 z-50 hidden group-hover:block bg-gray-800 text-white text-xs rounded-lg px-3 py-2 w-56 shadow-xl">
+                    Use this to manually set access for any staff member. E.g. select only "Notifications" for a Guard.
+                  </span>
+                </span>
+              </div>
               <div className="grid grid-cols-2 gap-2">
                 {[
-                  {id:'dashboard',  label:'Dashboard'},
-                  {id:'students',   label:'Students'},
-                  {id:'feecollect', label:'Student Ledger'},
-                  {id:'fees',       label:'Fee Collection'},
-                  {id:'inventory',  label:'Inventory'},
-                  {id:'expenses',   label:'Expenses'},
-                  {id:'family',     label:'Family Ledger'},
-                  {id:'staff',      label:'Staff & Salary'},
-                  {id:'books',      label:'Books & Vendors'},
-                  {id:'exams',      label:'Exams'},
-                  {id:'cashbook',   label:'Cash Book'},
-                  {id:'notifications', label:'Notifications'},
+                  {id:'dashboard',     icon:'🏠', label:'Dashboard'},
+                  {id:'students',      icon:'👨‍🎓', label:'Students'},
+                  {id:'feecollect',    icon:'📒', label:'Student Ledger'},
+                  {id:'fees',          icon:'💰', label:'Fee Collection'},
+                  {id:'inventory',     icon:'📦', label:'Inventory'},
+                  {id:'expenses',      icon:'🧾', label:'Expenses'},
+                  {id:'family',        icon:'👨‍👩‍👧‍👦', label:'Family Ledger'},
+                  {id:'staff',         icon:'👩‍🏫', label:'Staff & Salary'},
+                  {id:'books',         icon:'📚', label:'Books & Vendors'},
+                  {id:'exams',         icon:'📝', label:'Exams'},
+                  {id:'cashbook',      icon:'💼', label:'Cash Book'},
+                  {id:'notifications', icon:'📢', label:'Notifications'},
                 ].map(m => {
                   const checked = (form.allowedModules||[]).includes(m.id);
                   return (
-                    <label key={m.id} className="flex items-center gap-2 cursor-pointer text-sm text-gray-700 hover:text-gray-900">
+                    <label key={m.id} className={`flex items-center gap-2 cursor-pointer text-xs rounded-lg px-2 py-2 border transition-all ${checked ? 'bg-red-600 text-white border-red-600 font-semibold' : 'bg-white text-gray-700 border-gray-200 hover:border-red-300 hover:bg-red-50'}`}>
                       <input type="checkbox" checked={checked}
                         onChange={e => {
                           const mods = form.allowedModules || [];
                           setForm({...form, allowedModules: e.target.checked ? [...mods, m.id] : mods.filter(x => x !== m.id)});
                         }}
-                        className="w-4 h-4 accent-red-600 rounded"/>
-                      {m.label}
+                        className="sr-only"/>
+                      <span>{m.icon}</span>
+                      <span>{m.label}</span>
+                      {checked && <span className="ml-auto">✓</span>}
                     </label>
                   );
                 })}
               </div>
+              <p className="text-xs text-gray-400 mt-2">Selected: {(form.allowedModules||[]).length} modules</p>
             </div>
           )}
+
           <div className="flex gap-2 mt-5">
             <Btn full onClick={save}>{form.id ? 'Update User' : 'Save User'}</Btn>
             <Btn variant="outline" onClick={() => setForm(null)}>Cancel</Btn>
@@ -8604,9 +8641,11 @@ function SecuritySettings() {
                         <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${
                           log.role==='admin' ? 'bg-blue-100 text-blue-700' :
                           log.role==='principal' ? 'bg-green-100 text-green-700' :
+                          log.role==='accountant' ? 'bg-teal-100 text-teal-700' :
+                          log.role==='teacher' ? 'bg-purple-100 text-purple-700' :
                           'bg-gray-100 text-gray-500'
                         }`}>
-                          {log.role==='admin' ? '🔐 Admin' : log.role==='principal' ? '🎓 Principal' : '👤 Staff'}
+                          {log.role==='admin' ? '🔐 Admin' : log.role==='principal' ? '🎓 Principal' : log.role==='accountant' ? '🧾 Accountant' : log.role==='teacher' ? '📖 Teacher' : '👤 Staff'}
                         </span>
                       </td>
                       <td className="px-3 py-2">
@@ -8655,20 +8694,20 @@ function SecuritySettings() {
 }
 
 const NAV_ALL = [
-  { id:'dashboard',   label:'Dashboard',           icon:'🏠',  roles:['admin','staff','principal'] },
-  { id:'students',    label:'Students',            icon:'👨‍🎓', roles:['admin','staff','principal'] },
-  { id:'feecollect',  label:'Student Ledger',      icon:'📒',  roles:['admin','staff','principal'] },
-  { id:'fees',        label:'Fee Collection',      icon:'💰',  roles:['admin','staff','principal'] },
-  { id:'inventory',   label:'Inventory',           icon:'📦',  roles:['admin','staff','principal'] },
-  { id:'expenses',    label:'Expenses',            icon:'🧾',  roles:['admin','staff','principal'] },
-  { id:'family',      label:'Family Ledger',       icon:'👨‍👩‍👧‍👦', roles:['admin','staff','principal'] },
-  { id:'staff',       label:'Staff & Salary',      icon:'👩‍🏫', roles:['admin','staff','principal'] },
-  { id:'books',       label:'Books & Vendors',     icon:'📚',  roles:['admin','staff','principal'] },
-  { id:'exams',       label:'Exams',               icon:'📝',  roles:['admin','staff','principal'] },
-  { id:'cashbook',    label:'Cash Book',           icon:'💼',  roles:['admin','principal'] },
-  { id:'notifications', label:'Notifications',     icon:'📢',  roles:['admin','principal','teacher'] },
-  { id:'users',       label:'User Management',     icon:'🔐',  roles:['admin'] },
-  { id:'security',    label:'Security',            icon:'🛡️',  roles:['admin'] },
+  { id:'dashboard',     label:'Dashboard',       icon:'🏠',  roles:['admin','staff','principal','accountant','teacher'] },
+  { id:'students',      label:'Students',        icon:'👨‍🎓', roles:['admin','staff','principal'] },
+  { id:'feecollect',    label:'Student Ledger',  icon:'📒',  roles:['admin','staff','principal','accountant'] },
+  { id:'fees',          label:'Fee Collection',  icon:'💰',  roles:['admin','staff','principal','accountant'] },
+  { id:'inventory',     label:'Inventory',       icon:'📦',  roles:['admin','staff','principal'] },
+  { id:'expenses',      label:'Expenses',        icon:'🧾',  roles:['admin','staff','principal','accountant'] },
+  { id:'family',        label:'Family Ledger',   icon:'👨‍👩‍👧‍👦', roles:['admin','staff','principal','accountant'] },
+  { id:'staff',         label:'Staff & Salary',  icon:'👩‍🏫', roles:['admin','staff','principal'] },
+  { id:'books',         label:'Books & Vendors', icon:'📚',  roles:['admin','staff','principal'] },
+  { id:'exams',         label:'Exams',           icon:'📝',  roles:['admin','staff','principal'] },
+  { id:'cashbook',      label:'Cash Book',       icon:'💼',  roles:['admin','principal','accountant'] },
+  { id:'notifications', label:'Notifications',   icon:'📢',  roles:['admin','principal','teacher'] },
+  { id:'users',         label:'User Management', icon:'🔐',  roles:['admin'] },
+  { id:'security',      label:'Security',        icon:'🛡️',  roles:['admin'] },
 ];
 
 function App() {
