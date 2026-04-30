@@ -44,16 +44,178 @@
 </head>
 <body class="bg-slate-100">
 <script>
-// Safety net: remove loading screen after 3s even if Babel/React fails
-setTimeout(function(){var l=document.getElementById('fb-loading');if(l)l.remove();},3000);
+// Safety net: smooth fade-out after 12s even if Babel/React fails
+window._hideFbLoading = function() {
+  var el = document.getElementById('fb-loading');
+  if (!el) return;
+  el.style.transition = 'opacity 0.85s ease, transform 0.85s ease';
+  el.style.opacity = '0';
+  el.style.transform = 'scale(1.04)';
+  el.style.pointerEvents = 'none';
+  setTimeout(function(){ if (el.parentNode) el.parentNode.removeChild(el); }, 900);
+};
+setTimeout(function(){ window._hideFbLoading(); }, 12000);
 </script>
-<div id="fb-loading" style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#f1f5f9;z-index:9999;font-family:'Segoe UI',Arial,sans-serif">
-  <div style="text-align:center;padding:20px">
-    <img src="diss-app/logo diss/for main sreeen when loading.png" alt="DISS" style="max-width:320px;width:90vw;object-fit:contain;margin-bottom:20px" onerror="this.style.display='none'"/>
-    <div style="font-size:0.85rem;color:#94a3b8;margin-top:0.5rem">Syncing data from cloud...</div>
-    <div style="margin-top:1rem;width:40px;height:40px;border:3px solid #e2e8f0;border-top-color:#3b82f6;border-radius:50%;animation:spin 0.8s linear infinite;display:inline-block"></div>
-    <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+
+<div id="fb-loading">
+<style>
+#fb-loading {
+  position: fixed; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  background: linear-gradient(160deg, #0d0d1a 0%, #1a0a0a 40%, #0d1a2a 100%);
+  z-index: 9999; font-family: 'Segoe UI', Arial, sans-serif; overflow: hidden;
+}
+/* Animated radial glow background */
+#fb-loading::before {
+  content: ''; position: absolute; inset: 0;
+  background: radial-gradient(ellipse 80% 60% at 50% 60%, rgba(192,57,43,0.18) 0%, transparent 70%);
+  animation: _bgPulse 3.5s ease-in-out infinite;
+}
+@keyframes _bgPulse { 0%,100%{opacity:0.5;transform:scale(1)} 50%{opacity:1;transform:scale(1.15)} }
+
+/* 3D scene container */
+._scene {
+  perspective: 700px; perspective-origin: 50% 50%;
+  position: relative; width: 240px; height: 240px;
+  display: flex; align-items: center; justify-content: center;
+  margin-bottom: 12px;
+}
+/* Float wrapper */
+._float { animation: _floatAnim 3.2s ease-in-out infinite; transform-style: preserve-3d; }
+@keyframes _floatAnim { 0%,100%{transform:translateY(0px)} 50%{transform:translateY(-18px)} }
+
+/* Spin wrapper — 360° Y-axis, 4s per turn */
+._spin {
+  animation: _spinAnim 4s linear infinite;
+  transform-style: preserve-3d;
+  position: relative; width: 190px; height: 190px;
+  display: flex; align-items: center; justify-content: center;
+}
+@keyframes _spinAnim { from{transform:rotateY(0deg)} to{transform:rotateY(360deg)} }
+
+/* Logo image — metallic glow */
+._spin img {
+  width: 190px; height: 190px; object-fit: contain;
+  filter:
+    drop-shadow(0 0 18px rgba(192,57,43,0.75))
+    drop-shadow(0 0 35px rgba(255,120,40,0.35))
+    drop-shadow(0 4px 8px rgba(0,0,0,0.6));
+}
+/* Metallic shine sweep */
+._shine {
+  position: absolute; inset: 0; border-radius: 50%; pointer-events: none;
+  background: linear-gradient(135deg, transparent 25%, rgba(255,255,255,0.28) 50%, transparent 75%);
+  animation: _shineAnim 4s linear infinite;
+}
+@keyframes _shineAnim { 0%,100%{opacity:0} 20%{opacity:1} 40%{opacity:0} 70%{opacity:0.55} 85%{opacity:0} }
+
+/* Edge depth (fake 3D thickness) */
+._depth {
+  position: absolute; inset: 0; border-radius: 50%; pointer-events: none;
+  box-shadow: inset 0 0 30px rgba(0,0,0,0.5), 0 0 0 1.5px rgba(255,180,80,0.12);
+}
+
+/* Orbiting ring */
+._orbit {
+  position: absolute; inset: -22px; border-radius: 50%;
+  border: 1.5px solid rgba(192,57,43,0.25);
+  animation: _orbitSpin 7s linear infinite;
+}
+._orbit::before, ._orbit::after {
+  content: ''; position: absolute; border-radius: 50%;
+  width: 9px; height: 9px; background: #c0392b;
+  box-shadow: 0 0 12px rgba(192,57,43,0.9), 0 0 24px rgba(192,57,43,0.4);
+}
+._orbit::before { top: -4.5px; left: 50%; transform: translateX(-50%); }
+._orbit::after { bottom: -4.5px; right: 30%; background: rgba(255,150,50,0.85); width: 6px; height: 6px; }
+@keyframes _orbitSpin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+
+/* Second orbit ring (opposite) */
+._orbit2 {
+  position: absolute; inset: -40px; border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.06);
+  animation: _orbitSpin 12s linear infinite reverse;
+}
+._orbit2::before {
+  content: ''; position: absolute; border-radius: 50%;
+  width: 5px; height: 5px; background: rgba(100,200,255,0.7);
+  box-shadow: 0 0 8px rgba(100,200,255,0.8); top: -2.5px; left: 40%; transform: translateX(-50%);
+}
+
+/* Ground shadow */
+._shadow {
+  position: absolute; bottom: -22px; left: 50%;
+  transform: translateX(-50%);
+  background: radial-gradient(ellipse, rgba(0,0,0,0.65) 0%, transparent 70%);
+  animation: _shadowAnim 3.2s ease-in-out infinite;
+}
+@keyframes _shadowAnim {
+  0%,100%{ width:130px; height:18px; opacity:0.55; }
+  50%{ width:60px; height:10px; opacity:0.18; }
+}
+
+/* Particle stars */
+._star {
+  position: absolute; border-radius: 50%; background: white;
+  animation: _twinkle var(--sd,3s) ease-in-out var(--sd2,0s) infinite;
+}
+@keyframes _twinkle { 0%,100%{opacity:0.08;transform:scale(0.7)} 50%{opacity:0.65;transform:scale(1.3)} }
+
+/* Progress bar */
+._bar-wrap { width: 200px; height: 3px; background: rgba(255,255,255,0.08); border-radius:2px; overflow:hidden; margin: 18px auto 0; }
+._bar { height:100%; background: linear-gradient(90deg,#8b0000,#c0392b,#e74c3c,#ff6b35); border-radius:2px; animation:_barAnim 2s ease-in-out infinite; }
+@keyframes _barAnim { 0%{width:0%;margin-left:0} 60%{width:75%;margin-left:0} 100%{width:0%;margin-left:100%} }
+
+/* Text */
+._t1 { color:#fff; font-size:1.05rem; font-weight:700; letter-spacing:0.3px; margin-bottom:3px; }
+._t2 { color:rgba(255,255,255,0.4); font-size:0.68rem; letter-spacing:2px; text-transform:uppercase; margin-bottom:8px; }
+._tsync { color:rgba(255,200,120,0.75); font-size:0.78rem; animation:_syncPulse 1.9s ease-in-out infinite; }
+@keyframes _syncPulse { 0%,100%{opacity:0.4} 50%{opacity:1;color:rgba(255,210,80,0.95)} }
+._dots span {
+  display:inline-block; width:5px; height:5px; border-radius:50%;
+  background:rgba(255,255,255,0.35); margin:0 2px;
+  animation:_dotB 1.4s ease-in-out infinite;
+}
+._dots span:nth-child(2){animation-delay:0.22s} ._dots span:nth-child(3){animation-delay:0.44s}
+@keyframes _dotB { 0%,80%,100%{transform:scale(0.7);opacity:0.35} 40%{transform:scale(1.3);opacity:1;background:#e74c3c} }
+</style>
+
+<!-- Star particles -->
+<div id="_particles" style="position:absolute;inset:0;overflow:hidden;pointer-events:none"></div>
+
+<div class="_scene">
+  <div class="_orbit2"></div>
+  <div class="_orbit"></div>
+  <div class="_float">
+    <div class="_spin">
+      <img src="diss-app/logo diss/for main sreeen when loading.png" alt="DISS"/>
+      <div class="_shine"></div>
+      <div class="_depth"></div>
+    </div>
   </div>
+  <div class="_shadow"></div>
+</div>
+
+<div style="text-align:center;position:relative;z-index:1">
+  <div class="_t1">Discovery International School System</div>
+  <div class="_t2">We are 21st Century School</div>
+  <div class="_tsync">⚡ Syncing data from cloud<span class="_dots"><span></span><span></span><span></span></span></div>
+  <div class="_bar-wrap"><div class="_bar"></div></div>
+</div>
+
+<script>
+(function(){
+  var c = document.getElementById('_particles');
+  if (!c) return;
+  for (var i = 0; i < 45; i++) {
+    var s = document.createElement('div');
+    s.className = '_star';
+    var size = (Math.random() * 2.5 + 0.8).toFixed(1);
+    s.style.cssText = 'width:'+size+'px;height:'+size+'px;left:'+(Math.random()*100).toFixed(1)+'%;top:'+(Math.random()*100).toFixed(1)+'%;--sd:'+(Math.random()*4+2).toFixed(1)+'s;--sd2:'+(Math.random()*3).toFixed(1)+'s';
+    c.appendChild(s);
+  }
+})();
+</script>
 </div>
 <!-- ── MASTER CODE OVERLAY ─────────────────────────────── -->
 <div id="mcode-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:99999;align-items:center;justify-content:center;font-family:'Segoe UI',Arial,sans-serif;">
@@ -8912,8 +9074,6 @@ function App() {
   localStorage.removeItem('sms_sess');
   window._fbSyncDone = false;
   window._fbAuthReady = false;
-  const loading = document.getElementById('fb-loading');
-  if (loading) loading.remove();
   ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
 
   // STEP 2: Sync Firebase — wait for auth to be ready first, then pull data
@@ -8953,6 +9113,7 @@ function App() {
       console.warn('Firebase background sync failed:', e);
     }
     window._fbSyncDone = true;
+    window._hideFbLoading(); // smooth fade-out after sync
 
     // STEP 3: Listen for changes from other devices
     try {
