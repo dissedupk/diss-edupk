@@ -4512,6 +4512,7 @@ function FamilyLedger() {
 
   const [selFamily, setSelFamily] = useState('');
   const [searchQ, setSearchQ] = useState('');
+  const detailRef = React.useRef(null);
   const [vm, setVm] = useState(NOW.getMonth());
   const [vy, setVy] = useState(NOW.getFullYear());
   const [splitMod, setSplitMod] = useState(false); // family payment modal
@@ -4969,7 +4970,7 @@ function FamilyLedger() {
             {filteredFamilies.map(g => {
               const sr = familySrMap[g.key] || '';
               return (
-                <button key={g.key} onClick={() => { setSelFamily(g.key); setSearchQ(''); }}
+                <button key={g.key} onClick={() => { setSelFamily(g.key); setSearchQ(''); setTimeout(() => detailRef.current && detailRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100); }}
                   className={`px-3 py-2 rounded-xl text-sm font-bold border-2 transition-all flex items-center gap-2 ${selFamily===g.key?'bg-purple-600 border-purple-600 text-white shadow':'bg-white border-gray-200 text-gray-600 hover:border-purple-400'}`}>
                   <span className={`text-xs font-extrabold px-1.5 py-0.5 rounded-lg ${selFamily===g.key?'bg-white/20 text-white':'bg-purple-100 text-purple-700'}`}>{String(sr).padStart(2,'0')}</span>
                   👨‍👩‍👧‍👦 {g.label}
@@ -4980,7 +4981,7 @@ function FamilyLedger() {
           </div>
 
           {selFamily && (
-            <>
+            <div ref={detailRef}>
               {/* Tabs */}
               <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit mb-5">
                 {[['fees','💰 Fee Ledger'],['books','📚 Books']].map(([k,l]) => (
@@ -5284,7 +5285,7 @@ function FamilyLedger() {
                   </Card>
                 </div>
               )}
-            </>
+            </div>
           )}
         </>
       )}
