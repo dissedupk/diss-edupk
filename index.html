@@ -1301,7 +1301,7 @@ function Dashboard({ setPage }) {
             <p>🏦 AF Due: Rs. {outstandingAF.toLocaleString()}</p>
             <p>📚 Books Due: Rs. {outstandingBks.toLocaleString()}</p>
           </div>
-          <div className="mt-3 bg-white/20 rounded-xl px-3 py-1.5 text-xs font-semibold w-fit cursor-pointer" onClick={() => setPage('feecollect')}>
+          <div className="mt-3 bg-white/20 rounded-xl px-3 py-1.5 text-xs font-semibold w-fit cursor-pointer" onClick={() => { setPage('feecollect'); sessionStorage.setItem('_currentPage','feecollect'); }}>
             {outstandingCount} students pending →
           </div>
         </div>
@@ -1352,7 +1352,7 @@ function Dashboard({ setPage }) {
               </div>
             </div>
           </div>
-          <div className="mt-3 cursor-pointer" onClick={() => setPage('feecollect')}>
+          <div className="mt-3 cursor-pointer" onClick={() => { setPage('feecollect'); sessionStorage.setItem('_currentPage','feecollect'); }}>
             <div className="bg-emerald-100 text-emerald-700 text-xs font-semibold px-3 py-1.5 rounded-xl text-center hover:bg-emerald-200 transition-all">
               → View Fee Collection
             </div>
@@ -1407,7 +1407,7 @@ function Dashboard({ setPage }) {
               <span className="font-extrabold text-red-600 text-base">Rs. {totalAllOut.toLocaleString()}</span>
             </div>
           </div>
-          <div className="mt-3 cursor-pointer" onClick={() => setPage('expenses')}>
+          <div className="mt-3 cursor-pointer" onClick={() => { setPage('expenses'); sessionStorage.setItem('_currentPage','expenses'); }}>
             <div className="bg-red-100 text-red-600 text-xs font-semibold px-3 py-1.5 rounded-xl text-center hover:bg-red-200 transition-all">
               → View Expenses
             </div>
@@ -1476,7 +1476,7 @@ function Dashboard({ setPage }) {
             purple: { bg: 'bg-purple-50 border-purple-200', val: 'text-purple-700', icon: 'bg-purple-100' },
           }[s.color] || { bg: 'bg-gray-50 border-gray-200', val: 'text-gray-700', icon: 'bg-gray-100' };
           return (
-            <div key={s.label} onClick={() => setPage(s.pg)}
+            <div key={s.label} onClick={() => { setPage(s.pg); sessionStorage.setItem('_currentPage', s.pg); }}
               className={`rounded-2xl border-2 p-4 cursor-pointer hover:shadow-md transition-all ${cardStyle.bg}`}>
               <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl mb-3 ${cardStyle.icon}`}>{s.icon}</div>
               <div className={`text-xl font-extrabold mb-0.5 ${cardStyle.val}`}>{s.value}</div>
@@ -1516,7 +1516,7 @@ function Dashboard({ setPage }) {
       {/* ── Vendor Payable Alert ── */}
       {netPayableVendors > 0 && (
         <div className="bg-orange-50 border-2 border-orange-200 rounded-2xl p-4 mb-4 flex items-center justify-between cursor-pointer hover:bg-orange-100 transition-all"
-          onClick={() => setPage('books')}>
+          onClick={() => { setPage('books'); sessionStorage.setItem('_currentPage','books'); }}>
           <div>
             <p className="text-xs font-bold text-orange-700 uppercase tracking-wide mb-1">🏪 Vendor Payable Outstanding</p>
             <p className="text-2xl font-extrabold text-orange-700">Rs. {netPayableVendors.toLocaleString()}</p>
@@ -8566,7 +8566,7 @@ const NAV_ALL = [
 
 function App() {
   const [currentUser, setCurrentUser] = useState(() => getSession());
-  const [page, setPage]     = useState('dashboard');
+  const [page, setPage]     = useState(() => sessionStorage.getItem('_currentPage') || 'dashboard');
   const [sideOpen, setSideOpen] = useState(false);
   const [staffCanModify, setStaffCanModify] = useState(() => S.get(K.PERM, {}).staffCanModify || false);
   const [showCalc, setShowCalc] = useState(false);
@@ -8603,9 +8603,9 @@ function App() {
   const NAV = currentUser.role === 'custom'
     ? NAV_ALL.filter(n => (currentUser.allowedModules || []).includes(n.id))
     : NAV_ALL.filter(n => n.roles.includes(currentUser.role));
-  const go  = (p) => { setPage(p); setSideOpen(false); };
+  const go  = (p) => { setPage(p); setSideOpen(false); sessionStorage.setItem('_currentPage', p); };
 
-  const logout = () => { clearSession(); setCurrentUser(null); setPage('dashboard'); };
+  const logout = () => { clearSession(); setCurrentUser(null); setPage('dashboard'); sessionStorage.removeItem('_currentPage'); };
 
   return (
     <UserContext.Provider value={currentUser}>
