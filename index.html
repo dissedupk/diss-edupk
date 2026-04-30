@@ -242,7 +242,7 @@ setTimeout(function(){ window._hideFbLoading(); }, 12000);
         Cancel
       </button>
     </div>
-    <p style="font-size:0.72rem;color:#cbd5e1;margin-top:14px;">Default master code: <strong>1234</strong></p>
+    <p style="font-size:0.72rem;color:#cbd5e1;margin-top:14px;">Contact administrator if you have forgotten the master code.</p>
   </div>
 </div>
 
@@ -317,12 +317,12 @@ const PermContext = React.createContext({ staffCanModify: false });
 // Set default admin PIN to 5555 if not already set
 (function() { const p = S.get(K.PERM, {}); if (!p.adminPin) S.set(K.PERM, { ...p, adminPin: '5555' }); })();
 
-const logAudit = (userId, username, action, module, oldVal, newVal) => {
+const logAudit = (username, name, action, module, oldVal, newVal) => {
   const sess = getSession() || {};
-  const userRole = sess.role || 'admin'; // auto-capture role from session
+  const userRole = sess.role || 'admin';
   const logs = S.get(K.AUDIT, []);
-  logs.unshift({ id: Date.now(), userId, username, role: userRole, action, module, oldVal: JSON.stringify(oldVal), newVal: JSON.stringify(newVal), timestamp: new Date().toISOString() });
-  S.set(K.AUDIT, logs.slice(0, 500)); // keep last 500
+  logs.unshift({ id: Date.now(), userId: sess.id || username, username, name, role: userRole, action, module, oldVal: JSON.stringify(oldVal), newVal: JSON.stringify(newVal), timestamp: new Date().toISOString() });
+  S.set(K.AUDIT, logs.slice(0, 500));
 };
 
 // ── User Context ──────────────────────────────────────────────────────────────
@@ -444,7 +444,9 @@ function printPage(title, bodyHtml) {
 
 const CLASSES = ['Play Group Red','Play Group Blue','Nursery','KG','1','2','3','4','5','6','7','8','9','10'];
 const MONTHS  = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-const NOW     = new Date();
+// Always return current time — never stale
+const NOW = new Date();
+Object.defineProperty(window, '_NOW', { get: () => new Date() });
 
 // ── Shared UI ────────────────────────────────────────────────────────────────
 function Modal({ title, onClose, children, wide = false, xl = false }) {
@@ -6107,7 +6109,7 @@ function Staff() {
 }
 
 // ── USER ADMIN ───────────────────────────────────────────────────────────────
-function UserAdmin({ onPasswordChange }) {
+function UserAdmin() {
   const { role, id: selfId } = React.useContext(UserContext);
   const isAdmin = role === 'admin';
   const [users, setUsers]       = useState(() => S.get(K.USERS, []));
@@ -6427,7 +6429,7 @@ function UserAdmin({ onPasswordChange }) {
 
       {adminReset && (
         <Modal title={`Reset Password — ${adminReset.user.name}`} onClose={() => setAdminReset(null)}>
-          <p className="text-xs text-gray-500 mb-4">Set a new password for <strong>{adminReset.user.name}</strong> ({adminReset.user.role}). Current password: <span className="font-mono">{adminReset.user.password}</span></p>
+          <p className="text-xs text-gray-500 mb-4">Set a new password for <strong>{adminReset.user.name}</strong> ({adminReset.user.role}).</p>
           <Inp label="New Password *" type="text" value={adminReset.newp} onChange={e => setAdminReset({...adminReset, newp: e.target.value})} placeholder="Enter new password"/>
           <div className="flex gap-2 mt-5">
             <Btn full variant="green" onClick={adminResetPw}>Reset Password</Btn>
@@ -8766,7 +8768,9 @@ function SecuritySettings() {
         <p className="text-sm text-red-600 mb-4">This will <strong>permanently delete ALL data</strong> — Students, Fees, Staff, Inventory, Cash Book, Users, Accounts, Audit Logs — and reset the app to factory defaults. <strong>This cannot be undone.</strong></p>
         <Btn variant="red" onClick={() => window.requireMasterCode(() => {
           if (!window.confirm('⚠️ FINAL WARNING: Delete ALL data and reset the app?\n\nThis cannot be undone. Press OK to confirm.')) return;
+          if (window._fbDB) { try { window._fbDB.goOffline(); } catch(e) {} }
           localStorage.clear();
+          sessionStorage.clear();
           alert('✅ All data cleared. App will now restart.');
           window.location.reload();
         }, 'Factory Reset — Delete ALL Data')}>
@@ -9029,11 +9033,12 @@ function App() {
         <header className="bg-white border-b border-gray-200 sticky top-0 z-10 shadow-sm">
           {/* Color strip */}
           <div className="h-1 bg-gradient-to-r from-red-500 via-amber-400 to-red-600"/>
-          {/* Marquee */}
-          <div className="bg-gray-800 text-white text-xs py-0.5 overflow-hidden">
-            <marquee behavior="scroll" direction="left" scrollamount="4">
-              &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ⭐ Welcome to TATAHEER BUSINESS GROUP &nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp; Discovery International School System &nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp; Wagha Road, Jallo More, Lahore &nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp; 📞 +92 (322) 8555566 &nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp; ⭐ Welcome to TATAHEER BUSINESS GROUP &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-            </marquee>
+          {/* Ticker */}
+          <div className="bg-gray-800 text-white text-xs py-0.5 overflow-hidden" style={{whiteSpace:'nowrap'}}>
+            <style>{`@keyframes _ticker{0%{transform:translateX(100vw)}100%{transform:translateX(-100%)}}`}</style>
+            <span style={{display:'inline-block',animation:'_ticker 28s linear infinite',paddingLeft:'100%'}}>
+              ⭐ Welcome to TATAHEER BUSINESS GROUP &nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp; Discovery International School System &nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp; Wagha Road, Jallo More, Lahore &nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp; 📞 +92 (322) 8555566 &nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp; ⭐ Welcome to TATAHEER BUSINESS GROUP &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+            </span>
           </div>
           <div className="px-4 py-2.5 flex items-center gap-3">
             <button onClick={() => setSideOpen(true)} className="lg:hidden text-gray-500 hover:text-gray-800 text-xl p-1 rounded-lg hover:bg-gray-100">☰</button>
@@ -9128,7 +9133,8 @@ function App() {
           const fresh = await window._fbDB.ref('sms').once('value');
           const freshData = fresh.val();
           if (freshData) {
-            Object.keys(freshData).forEach(k => localStorage.setItem(k, JSON.stringify(freshData[k])));
+            const SAFE_KEYS = ['sms_stu','sms_inv','sms_tx','sms_cf','sms_pay','sms_exp','sms_af','sms_staff','sms_spay','sms_bl','sms_ds','sms_rs','sms_vend','sms_sbook','sms_users','sms_vpay','sms_acct','sms_cbook','sms_perm','sms_audit','sms_preq','sms_notif','sms_comp'];
+            SAFE_KEYS.forEach(k => { if (freshData[k] !== undefined) localStorage.setItem(k, JSON.stringify(freshData[k])); });
             if (window._smsRefresh) window._smsRefresh();
           }
         } catch(e) {}
