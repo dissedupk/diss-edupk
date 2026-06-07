@@ -7891,6 +7891,7 @@ function Exams() {
   const calcTotal    = (marks, subjs) => (subjs || Object.keys(marks)).reduce((s,sub)=>{const v=marks[sub];return s+(v===''||v===undefined?0:Number(v));},0);
   const calcMaxTotal = (subjs) => subjs.reduce((s,sub)=>s+getSubjTotal(sub),0);
   const calcPct      = (marks, subjs) => subjs.length ? Math.round(calcTotal(marks, subjs) / calcMaxTotal(subjs) * 100) : 0;
+  // Grade scale: A+ 90-100 | A 80-89 | B+ 70-79 | B 60-69 | C 50-59 | D 40-49 | F below 40 (FAIL)
   const getGrade   = (pct) => pct>=90?'A+':pct>=80?'A':pct>=70?'B+':pct>=60?'B':pct>=50?'C':pct>=40?'D':'F';
   const passOrFail = (pct) => pct >= 40 ? 'PASS' : 'FAIL';
 
@@ -7950,32 +7951,29 @@ function Exams() {
     // Helper: true if at least one mark was actually entered (not empty)
     const hasData = (marksObj) => Object.values(marksObj).some(v => v !== '' && v !== undefined && v !== null);
 
+    // ── Per-term rows (Term 1, Term 2, Term 3) — same formula for all three ──
     const termRows = TERMS.map(t => {
       const tk = `${stu.id}_${t}_${selYear}`;
       const tm = results[tk] || {};
-
-      // ── Term 3 row = cumulative T1 + T2 (annual combined result) ──────────
-      if (t === 'Term 3') {
-        const tm1 = results[`${stu.id}_Term 1_${selYear}`] || {};
-        const tm2 = results[`${stu.id}_Term 2_${selYear}`] || {};
-        if (!hasData(tm1) && !hasData(tm2)) {
-          return `<tr><td><b>Annual (T1+T2)</b></td><td style="text-align:center;color:#9ca3af">—</td><td style="text-align:center;color:#9ca3af">—</td><td style="text-align:center;color:#9ca3af">—</td><td style="text-align:center;color:#9ca3af">—</td><td style="text-align:center;color:#9ca3af;font-style:italic">Not Yet</td></tr>`;
-        }
-        const combObt = calcTotal(tm1, subjs) + calcTotal(tm2, subjs);
-        const combMax = maxTot * 2;
-        const combPct = combMax > 0 ? Math.round(combObt / combMax * 100) : 0;
-        return `<tr style="background:#f0fdf4"><td><b>Annual (T1+T2)</b></td><td style="text-align:center"><b>${combMax}</b></td><td style="text-align:center;font-weight:700">${combObt}</td><td style="text-align:center">${combPct}%</td><td style="text-align:center">${getGrade(combPct)}</td><td style="text-align:center;font-weight:700;color:${passOrFail(combPct)==='PASS'?'#15803d':'#dc2626'}">${passOrFail(combPct)}</td></tr>`;
-      }
-
-      // ── Term 1 / Term 2: only show if marks have been entered ─────────────
       if (!hasData(tm)) {
         return `<tr><td>${t}</td><td style="text-align:center">${maxTot}</td><td style="text-align:center;color:#9ca3af">—</td><td style="text-align:center;color:#9ca3af">—</td><td style="text-align:center;color:#9ca3af">—</td><td style="text-align:center;color:#9ca3af;font-style:italic">Not Yet</td></tr>`;
       }
-
-      const tt  = calcTotal(tm, subjs);
-      const tp  = calcPct(tm, subjs);
+      const tt = calcTotal(tm, subjs);
+      const tp = calcPct(tm, subjs);
       return `<tr><td>${t}</td><td style="text-align:center">${maxTot}</td><td style="text-align:center;font-weight:700">${tt}</td><td style="text-align:center">${tp}%</td><td style="text-align:center">${getGrade(tp)}</td><td style="text-align:center;font-weight:700;color:${passOrFail(tp)==='PASS'?'#15803d':'#dc2626'}">${passOrFail(tp)}</td></tr>`;
     }).join('');
+
+    // ── Annual combined row (T1+T2+T3) — only appears on Term 3 result cards ──
+    let annualRow = '';
+    if (selTerm === 'Term 3') {
+      const tm1 = results[`${stu.id}_Term 1_${selYear}`] || {};
+      const tm2 = results[`${stu.id}_Term 2_${selYear}`] || {};
+      const tm3 = results[`${stu.id}_Term 3_${selYear}`] || {};
+      const combObt = calcTotal(tm1, subjs) + calcTotal(tm2, subjs) + calcTotal(tm3, subjs);
+      const combMax = maxTot * 3;
+      const combPct = combMax > 0 ? Math.round(combObt / combMax * 100) : 0;
+      annualRow = `<tr style="background:#f0fdf4"><td><b>Annual (T1+T2+T3)</b></td><td style="text-align:center"><b>${combMax}</b></td><td style="text-align:center;font-weight:700">${combObt}</td><td style="text-align:center">${combPct}%</td><td style="text-align:center">${getGrade(combPct)}</td><td style="text-align:center;font-weight:700;color:${passOrFail(combPct)==='PASS'?'#15803d':'#dc2626'}">${passOrFail(combPct)}</td></tr>`;
+    }
     const posLabel = position ? `${position}${position===1?'st':position===2?'nd':position===3?'rd':'th'}` : '—';
     return `
     <div class="student-card-container">
@@ -8011,10 +8009,59 @@ function Exams() {
         <div class="rcard purple"><div class="rv">${grade}</div><div class="rl">Grade</div></div>
         <div class="rcard ${pf==='PASS'?'pass':'fail'}"><div class="rv">${pf}</div><div class="rl">Result</div></div>
       </div>
-      <h3>Annual Performance — ${selYear}</h3>
+      <div class="sig">
+        <span>Class Teacher: _______________</span>
+        <span>Principal: _______________</span>
+        <span>Parent Signature: _______________</span>
+      </div>
+      <div class="dev-footer">© 2026 DISS — All Rights Reserved &nbsp;|&nbsp; Powered by Tataheer Business Group &nbsp;|&nbsp; +923218555566</div>
+    </div>
+    <div class="student-card-container">
+      <div class="hdr">
+        <img src="${LOGO_SRC}" alt="DISS" onerror="this.style.display='none'"/>
+        <div class="hdr-title">ANNUAL PROGRESS REPORT — ${selYear}</div>
+      </div>
+      <div class="info-grid">
+        <div class="info-item">
+          <div class="lbl">Student Name</div><div class="val">${stu.name}</div>
+          <div class="lbl" style="margin-top:6px">Class</div><div class="val">${stu.cls}</div>
+        </div>
+        <div class="info-item">
+          <div class="lbl">Father's Name</div><div class="val">${stu.father||'—'}</div>
+          <div class="lbl" style="margin-top:6px">Roll Number</div><div class="val">${stu.roll}</div>
+        </div>
+        <div class="info-item pos" style="text-align:center;border-left:2px solid #e2e8f0;padding-left:8px">
+          <div class="lbl">Class Position</div>
+          <div class="val">${posLabel}</div>
+          <div style="font-size:9px;color:#6b7280;margin-top:2px">in class</div>
+        </div>
+      </div>
+      <h3>Term-wise Performance — ${selYear}</h3>
       <table>
         <thead><tr><th>Term</th><th style="text-align:center">Total Marks</th><th style="text-align:center">Obtained</th><th style="text-align:center">%</th><th style="text-align:center">Grade</th><th style="text-align:center">Result</th></tr></thead>
-        <tbody>${termRows}</tbody>
+        <tbody>${termRows}${annualRow}</tbody>
+      </table>
+      <div style="margin-top:14px;padding:10px 14px;background:#f8fafc;border-left:3px solid #1e3a8a;border-radius:4px;font-size:10px;color:#475569;line-height:1.6">
+        <b style="color:#1e3a8a">Note:</b> This report shows the student's term-wise academic performance across the entire academic year. The combined annual result (T1+T2+T3) is calculated and displayed on the Term 3 report card.
+      </div>
+      <h3 style="margin-top:14px">Grading Scale</h3>
+      <table style="width:100%;border-collapse:collapse;font-size:10px">
+        <thead>
+          <tr style="background:#1e3a8a;color:#fff">
+            <th style="padding:6px;text-align:center">Grade</th>
+            <th style="padding:6px;text-align:center">Percentage</th>
+            <th style="padding:6px;text-align:center">Remarks</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td style="padding:5px;text-align:center;font-weight:700;color:#15803d">A+</td><td style="padding:5px;text-align:center">90% and above</td><td style="padding:5px;text-align:center">Outstanding</td></tr>
+          <tr style="background:#f8fafc"><td style="padding:5px;text-align:center;font-weight:700;color:#15803d">A</td><td style="padding:5px;text-align:center">80% – 89%</td><td style="padding:5px;text-align:center">Excellent</td></tr>
+          <tr><td style="padding:5px;text-align:center;font-weight:700;color:#1e40af">B+</td><td style="padding:5px;text-align:center">70% – 79%</td><td style="padding:5px;text-align:center">Very Good</td></tr>
+          <tr style="background:#f8fafc"><td style="padding:5px;text-align:center;font-weight:700;color:#1e40af">B</td><td style="padding:5px;text-align:center">60% – 69%</td><td style="padding:5px;text-align:center">Good</td></tr>
+          <tr><td style="padding:5px;text-align:center;font-weight:700;color:#b45309">C</td><td style="padding:5px;text-align:center">50% – 59%</td><td style="padding:5px;text-align:center">Satisfactory</td></tr>
+          <tr style="background:#f8fafc"><td style="padding:5px;text-align:center;font-weight:700;color:#b45309">D</td><td style="padding:5px;text-align:center">40% – 49%</td><td style="padding:5px;text-align:center">Pass</td></tr>
+          <tr><td style="padding:5px;text-align:center;font-weight:700;color:#dc2626">F</td><td style="padding:5px;text-align:center">Below 40%</td><td style="padding:5px;text-align:center">Fail (FAIL)</td></tr>
+        </tbody>
       </table>
       <div class="sig">
         <span>Class Teacher: _______________</span>
