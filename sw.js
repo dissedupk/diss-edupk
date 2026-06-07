@@ -1,7 +1,9 @@
-const CACHE = 'diss-v13';
+const CACHE = 'diss-v29';
 const ASSETS = [
   '/',
-  '/index.html'
+  '/index.html',
+  '/manifest.json',
+  '/sw.js'
 ];
 
 self.addEventListener('install', e => {

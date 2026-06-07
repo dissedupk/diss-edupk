@@ -298,11 +298,10 @@ const S = {
     localStorage.setItem(k, JSON.stringify(v));
     if (window._fbAuthReady && window._fbDB) {
       window._fbDB.ref('sms/' + k).set(v).catch(() => {});
-      window._fbDB.ref('sms_meta/lastUpdate').set({ time: Date.now(), writer: window._sessionId }).catch(() => {});
     }
   }
 };
-const K = { STU:'sms_stu', INV:'sms_inv', TX:'sms_tx', CF:'sms_cf', PAY:'sms_pay', EXP:'sms_exp', AF:'sms_af', STAFF:'sms_staff', SPAY:'sms_spay', BL:'sms_bl', DS:'sms_ds', RS:'sms_rs', VENDOR:'sms_vend', SBOOK:'sms_sbook', USERS:'sms_users', SESS:'sms_sess', VPAY:'sms_vpay', ACCT:'sms_acct', CBOOK:'sms_cbook', PERM:'sms_perm', AUDIT:'sms_audit', PREQ:'sms_preq', NOTIF:'sms_notif', COMP:'sms_comp' };
+const K = { STU:'sms_stu', INV:'sms_inv', TX:'sms_tx', CF:'sms_cf', PAY:'sms_pay', EXP:'sms_exp', AF:'sms_af', STAFF:'sms_staff', SPAY:'sms_spay', BL:'sms_bl', DS:'sms_ds', RS:'sms_rs', ST:'sms_st', SL:'sms_sl', VENDOR:'sms_vend', SBOOK:'sms_sbook', USERS:'sms_users', SESS:'sms_sess', VPAY:'sms_vpay', ACCT:'sms_acct', CBOOK:'sms_cbook', PERM:'sms_perm', AUDIT:'sms_audit', PREQ:'sms_preq', NOTIF:'sms_notif', COMP:'sms_comp', ASSET:'sms_asset' };
 window.S = S; window.K = K;
 
 // Session stored in sessionStorage — clears automatically when browser/PWA is closed
@@ -342,11 +341,37 @@ const DEFAULT_BOOKS = {
 };
 
 // ── Exam Subjects per Class ───────────────────────────────────────────────────
-const SUBJECTS_PG_KG  = ['English (Written)','English (Oral)','Math','Urdu (Written)','Urdu (Oral)','Computer','Science','Islamiyat','Mashartialoum','Nazra','Drawing','Rhymes'];
+const SUBJECTS_PG_KG  = ['English (Written)','English (Oral)','Math','Urdu (Written)','Urdu (Oral)','Computer','Science','General Knowledge','Islamiyat','Mashartialoum','Nazra','Drawing','Rhymes'];
 const SUBJECTS_1_10   = ['English (Written)','English (Oral)','Math','Urdu (Written)','Urdu (Oral)','Computer','Science','Islamiyat','Mashartialoum','Nazra','Drawing'];
 const TERMS           = ['Term 1','Term 2','Term 3'];
 const TOTAL_MARKS     = 100;
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+// XSS sanitizer — use whenever user data is injected into HTML strings
+const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+
+// ── Financial Engine Cutoff — June 2026 ──────────────────────────────────────
+// Payments BEFORE this cutoff are excluded from outstanding balance calculations.
+// Historical records remain in K.PAY untouched. Opening balances in K.STU still apply.
+const ENGINE_CUTOFF_YEAR  = 2026;
+const ENGINE_CUTOFF_MONTH = 5; // June (0-indexed, same as JS Date.getMonth())
+
+// Returns true for payments from June 2026 onwards
+const isFromCutoff = p =>
+  Number(p.year) > ENGINE_CUTOFF_YEAR ||
+  (Number(p.year) === ENGINE_CUTOFF_YEAR && Number(p.month) >= ENGINE_CUTOFF_MONTH);
+
+// Wrapper: builds paid maps using only June 2026+ payments
+// Use this for ALL outstanding balance calculations.
+// Use raw buildPaidMaps() only for income/recovery totals in P&L.
+function buildPaidMapsFromCutoff(payments) {
+  return buildPaidMaps(payments.filter(isFromCutoff));
+}
+
+// Fresh-start outstanding: ignores opening balance (pre-June accumulated dues zeroed)
+// Use everywhere getStuOutstanding is called with a cutoff paidMaps argument.
+function getStuOutstandingFromCutoff(st, classFees, paidMaps) {
+  return getStuOutstanding({ ...st, openingBalance: 0 }, classFees, paidMaps);
+}
 
 // ── Accounting ────────────────────────────────────────────────────────────────
 const PAYMENT_METHODS = ['Cash', 'Bank Transfer', 'JazzCash', 'Easypaisa'];
@@ -444,8 +469,110 @@ function printPage(title, bodyHtml) {
 
 const CLASSES = ['Play Group Red','Play Group Blue','Nursery','KG','1','2','3','4','5','6','7','8','9','10'];
 const MONTHS  = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-// Always return current time — never stale
-const NOW = new Date();
+// ── GLOBAL FINANCIAL ENGINE HELPERS ──────────────────────────────────────────
+// ALL modules must use these. Never inline these formulas anywhere else.
+
+// 1. Auto-discount: if student's set rate is below class fee, difference is discount
+function getStuDisc(st, classFees) {
+  const cf = Number(classFees[st.cls] || 0);
+  const sr = Number(st.monthlyFee || 0);
+  return (sr > 0 && sr < cf) ? cf - sr : 0;
+}
+
+// 2. Monthly net fee due for a student (class fee minus auto-discount, min 0)
+function getStuNetMonthlyDue(st, classFees) {
+  if (!isActiveStu(st)) return 0;  // left students have no future dues
+  return Math.max(0, Number(classFees[st.cls] || 0) - getStuDisc(st, classFees));
+}
+
+// 3. Build all-time payment maps from a payments array in one pass
+// Returns: { feeMap, afMap, booksMap, discMap } — each keyed by stuId
+function buildPaidMaps(payments) {
+  const feeMap = {}, afMap = {}, booksMap = {}, discMap = {};
+  payments.forEach(p => {
+    const id = p.stuId;
+    feeMap[id]   = (feeMap[id]   || 0) + Number(p.amount     || 0);
+    afMap[id]    = (afMap[id]    || 0) + Number(p.annualFund  || 0);
+    booksMap[id] = (booksMap[id] || 0) + Number(p.booksPaid   || 0);
+    discMap[id]  = (discMap[id]  || 0) + Number(p.discount    || 0);
+  });
+  return { feeMap, afMap, booksMap, discMap };
+}
+
+// 4. All-time outstanding balance for a student
+// = openingBalance + netMonthlyFee (with effective discount) - allTimePaid
+function getStuOutstanding(st, classFees, paidMaps) {
+  if (!isActiveStu(st)) return 0;  // left students excluded from active outstanding
+  const cf       = Number(classFees[st.cls] || 0);
+  const ob       = Number(st.openingBalance || 0);
+  const autoDisc = getStuDisc(st, classFees);
+  const recDisc  = paidMaps.discMap[st.id] || 0;
+  const effDisc  = Math.max(autoDisc, recDisc);
+  const netFee   = Math.max(0, cf - effDisc);
+  const paid     = paidMaps.feeMap[st.id] || 0;
+  return Math.max(0, netFee + ob - paid);
+}
+
+// ── ACTIVE STATUS HELPERS — used by all modules ──────────────────────────────
+const isActiveStu   = (st) => st.status !== 'left';
+const isActiveStaff = (sf) => sf.status !== 'left';
+
+// ── SHARED P&L ENGINE — single source of truth ────────────────────────────────
+function calcPL({ year, period = 'annual', month = 0 }) {
+  const payments = S.get(K.PAY,   []);
+  const cbAll    = S.get(K.CBOOK, []);
+  const spays    = S.get(K.SPAY,  []);
+  const assets   = S.get(K.ASSET, []);
+  const payInRange = p => period === 'monthly'
+    ? Number(p.year) === year && Number(p.month) === month
+    : Number(p.year) === year;
+  const dateInRange = dateStr => {
+    const d = new Date(dateStr || 0);
+    return period === 'monthly'
+      ? d.getFullYear() === year && d.getMonth() === month
+      : d.getFullYear() === year;
+  };
+  const feeIncome   = payments.filter(payInRange).reduce((s,p)=>s+Number(p.amount    ||0),0);
+  const afIncome    = payments.filter(payInRange).reduce((s,p)=>s+Number(p.annualFund||0),0);
+  const booksIncome = payments.filter(payInRange).reduce((s,p)=>s+Number(p.booksPaid ||0),0);
+  // Exclude fee/books/AF/capital entries from Cash Book income — already counted via K.PAY or separate
+  const cbIncome    = cbAll.filter(e=>e.type==='income'  && dateInRange(e.date)
+                        && e.refType !== 'fee' && e.refType !== 'books'
+                        && e.refType !== 'owner_capital' && e.refType !== 'transfer'
+                        && e.refType !== 'opening_balance'  // memo only — not real cash received
+                      ).reduce((s,e)=>s+Number(e.amount||0),0);
+  const totalIncome = feeIncome + afIncome + booksIncome + cbIncome;
+
+  // Exclude drawing/transfer entries from operating expenses
+  const cbExpenses  = cbAll.filter(e=>e.type==='expense' && dateInRange(e.date)
+                        && e.refType !== 'owner_drawing' && e.refType !== 'transfer'
+                      ).reduce((s,e)=>s+Number(e.amount||0),0);
+  const salaryExp   = spays.filter(p=>dateInRange(p.date)).reduce((s,p)=>s+Number(p.amount||0),0);
+  const totalExpenses = cbExpenses + salaryExp;
+  const netPL       = totalIncome - totalExpenses;
+
+  // ── Owner Equity — ALL-TIME (not period filtered) ──
+  const ownerCapital = cbAll.filter(e=>e.type==='income'  && e.refType==='owner_capital').reduce((s,e)=>s+Number(e.amount||0),0);
+  const ownerDrawing = cbAll.filter(e=>e.type==='expense' && e.refType==='owner_drawing').reduce((s,e)=>s+Number(e.amount||0),0);
+  // All-time net profit for equity calculation
+  const allTimeFeeInc  = payments.reduce((s,p)=>s+Number(p.amount||0),0);
+  const allTimeAFInc   = payments.reduce((s,p)=>s+Number(p.annualFund||0),0);
+  const allTimeBkInc   = payments.reduce((s,p)=>s+Number(p.booksPaid||0),0);
+  const allTimeCbInc   = cbAll.filter(e=>e.type==='income' && e.refType!=='fee' && e.refType!=='books' && e.refType!=='owner_capital' && e.refType!=='transfer').reduce((s,e)=>s+Number(e.amount||0),0);
+  const allTimeCbExp   = cbAll.filter(e=>e.type==='expense' && e.refType!=='owner_drawing' && e.refType!=='transfer').reduce((s,e)=>s+Number(e.amount||0),0);
+  const allTimeSalary  = spays.reduce((s,p)=>s+Number(p.amount||0),0);
+  const allTimeNetPL   = (allTimeFeeInc + allTimeAFInc + allTimeBkInc + allTimeCbInc) - (allTimeCbExp + allTimeSalary);
+  const ownerEquity    = ownerCapital + allTimeNetPL - ownerDrawing;
+
+  const assetValue  = assets.reduce((s,a)=>s+Number(a.currentValue||a.purchaseValue||0),0);
+  const assetCount  = assets.length;
+  return { feeIncome, afIncome, booksIncome, cbIncome, totalIncome,
+           cbExpenses, salaryExp, totalExpenses, netPL, assetValue, assetCount,
+           ownerCapital, ownerDrawing, ownerEquity, allTimeNetPL };
+}
+
+// Always return current time — never stale (getter, not static value)
+Object.defineProperty(window, 'NOW', { get: () => new Date(), configurable: true });
 Object.defineProperty(window, '_NOW', { get: () => new Date() });
 
 // ── Shared UI ────────────────────────────────────────────────────────────────
@@ -572,7 +699,7 @@ function LoginScreen({ onLogin }) {
       const attempts = loginAttempts + 1;
       setLoginAttempts(attempts);
       setErr('Invalid username or password.');
-      if (attempts >= 2) setShowRecovery(true);
+      if (attempts >= 5) setShowRecovery(true);
       return;
     }
     if (tab === 'staff' && user.role === 'parent') { setErr('Please use the Parent Login tab.'); return; }
@@ -675,7 +802,7 @@ function LoginScreen({ onLogin }) {
               className="w-full bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-bold py-2.5 rounded-xl transition-all text-sm">
               {syncing ? '⏳ Syncing...' : 'Sign In'}
             </button>
-            <p className="text-center text-xs text-gray-400 mt-3">Default: <strong>admin</strong> / <strong>admin</strong></p>
+            <p className="text-center text-xs text-gray-400 mt-3">Contact admin if you need login credentials.</p>
 
             {/* Emergency Recovery Panel */}
             {showRecovery && (
@@ -686,7 +813,7 @@ function LoginScreen({ onLogin }) {
                   type="password" value={recoveryCode}
                   onChange={e => { setRecoveryCode(e.target.value); setRecoveryErr(''); }}
                   onKeyDown={e => e.key === 'Enter' && emergencyReset()}
-                  placeholder="Master code (default: 1234)"
+                  placeholder="Enter master code"
                   className="w-full border border-amber-300 rounded-lg px-3 py-2 text-sm mb-2 outline-none focus:border-amber-500"/>
                 {recoveryErr && <p className="text-xs text-red-600 mb-2">{recoveryErr}</p>}
                 <div className="flex gap-2">
@@ -698,7 +825,7 @@ function LoginScreen({ onLogin }) {
                 </div>
               </div>
             )}
-            {!showRecovery && loginAttempts >= 1 && (
+            {!showRecovery && loginAttempts >= 5 && (
               <p className="text-center mt-2">
                 <button onClick={() => setShowRecovery(true)} className="text-xs text-gray-400 hover:text-amber-600 underline">
                   Forgot password? Emergency reset
@@ -859,12 +986,12 @@ function ParentPortal({ currentUser, onLogout }) {
     const customFee    = Number(s.monthlyFee || 0);
     const allPays      = payments.filter(p => p.stuId === s.id);
     const curMonthPays = allPays.filter(p => p.month === curM && p.year === curY);
-    const paidThisMonth   = curMonthPays.reduce((t, p) => t + Number(p.amount || 0), 0);
+    const paidThisMonth    = curMonthPays.reduce((t, p) => t + Number(p.amount || 0), 0);
     const payDiscThisMonth = curMonthPays.reduce((t, p) => t + Number(p.discount || 0), 0);
-    // Use monthlyFee if set, else fall back to payment-recorded discount
-    const autoDisc = customFee > 0 && customFee < classFee ? classFee - customFee : 0;
+    // ── Global Engine: use core discount & fee functions ──────────────────
+    const autoDisc = getStuDisc(s, classFees);
     const discount = autoDisc > 0 ? autoDisc : payDiscThisMonth;
-    const fee      = Math.max(0, classFee - discount);
+    const fee      = getStuNetMonthlyDue(s, classFees);
     const lastPay  = [...allPays].sort((a, b) => new Date(b.date) - new Date(a.date))[0];
     const totalPaid = allPays.reduce((t, p) => t + Number(p.amount || 0), 0);
     const afPaid    = allPays.reduce((t, p) => t + Number(p.annualFund || 0), 0);
@@ -1361,49 +1488,32 @@ function Dashboard({ setPage }) {
   const cbGeneralH     = dashCbExp.filter(e => e.refType !== 'vendor' && !/^salary\b/i.test(e.description||'') && !/guard|sweep|rent/i.test(e.description||'')).reduce((s,e)=>s+Number(e.amount||0),0);
   const cbTotalExpH    = dashCbExp.reduce((s,e)=>s+Number(e.amount||0),0);
 
-  // Cash In Hand = student income - expenses (salary shown separately as info, not deducted)
-  const cashInHand = totalStudentIncome - allExpenses;
+  // Cash In Hand = student income - all Cash Book expenses (single source of truth)
+  const cashInHand = totalStudentIncome - cbTotalExpH;
+  // ── Tier 3 Annual P&L — shared engine ──
+  const { feeIncome:plFeeIncome, afIncome:plAFIncome, booksIncome:plBooksIncome,
+          cbIncome:plCbIncome, totalIncome:plTotalIncome,
+          cbExpenses:plCbExpenses, salaryExp:plSalaryExp,
+          totalExpenses:plTotalExp, netPL:plNet,
+          assetValue:plAssetVal, assetCount:dashAssetCount,
+          ownerCapital:plOwnerCapital, ownerDrawing:plOwnerDrawing,
+          ownerEquity:plOwnerEquity, allTimeNetPL:plAllTimeNetPL } = calcPL({ year: y });
   const lowStock   = inventory.filter(i => Number(i.qty) <= Number(i.threshold || 5));
-  // Outstanding: fee + annual fund + books
-  const paidAmountMap = {};
-  const paidAFMap = {};
-  const paidBooksMap = {};
-  monthPays.forEach(p => { paidAmountMap[p.stuId] = (paidAmountMap[p.stuId] || 0) + Number(p.amount); });
-  monthPays.forEach(p => { paidAFMap[p.stuId] = (paidAFMap[p.stuId] || 0) + Number(p.annualFund || 0); });
-  payments.forEach(p => { if (p.booksPaid > 0) paidBooksMap[p.stuId] = (paidBooksMap[p.stuId] || 0) + Number(p.booksPaid); });
+  // Outstanding: all maps come from single buildPaidMaps call below — no separate loops
   const bookLists = S.get(K.BL, {});
   const getStudentBookTotal = (stu) => (bookLists[stu.id] || []).reduce((s, b) => s + Number(b.price||0)*Number(b.qty||0), 0);
 
-  // All-time paid map (all months, not just current month)
-  const allTimePaidMap = {};
-  payments.forEach(p => { allTimePaidMap[p.stuId] = (allTimePaidMap[p.stuId]||0) + Number(p.amount); });
-  const allTimeDiscMap = {};
-  payments.forEach(p => { allTimeDiscMap[p.stuId] = (allTimeDiscMap[p.stuId]||0) + Number(p.discount||0); });
+  // ── Global Engine: cutoff-filtered maps — June 2026+ payments only for outstanding ──
+  const _dashPaidMaps = buildPaidMapsFromCutoff(payments);
+  const { feeMap: allTimePaidMap, afMap: allTimePaidAFMap, booksMap: allTimePaidBksMap, discMap: allTimeDiscMap } = _dashPaidMaps;
 
-  const dashStuDisc = (st) => { const cf=Number(classFees[st.cls]||0); const sr=Number(st.monthlyFee||0); return sr>0&&sr<cf?cf-sr:0; };
-  // Net Outstanding = monthly fee − auto-discount + opening balance − ALL-TIME paid
-  const outstandingFee = students.reduce((s, st) => {
-    const cf   = Number(classFees[st.cls]||0);
-    const ob   = Number(st.openingBalance||0);
-    const disc = Math.max(dashStuDisc(st), allTimeDiscMap[st.id]||0);
-    const paid = allTimePaidMap[st.id]||0;
-    return s + Math.max(0, Math.max(0, cf - disc) + ob - paid);
-  }, 0);
-  const allTimePaidAFMap = {};
-  payments.forEach(p => { allTimePaidAFMap[p.stuId] = (allTimePaidAFMap[p.stuId]||0) + Number(p.annualFund||0); });
-  const allTimePaidBksMap = {};
-  payments.forEach(p => { if (p.booksPaid > 0) allTimePaidBksMap[p.stuId] = (allTimePaidBksMap[p.stuId]||0) + Number(p.booksPaid); });
-  const outstandingAF  = students.reduce((s, st) => s + Math.max(0, Number(st.annualFund||0) - (allTimePaidAFMap[st.id]||0)), 0);
-  const outstandingBks = students.reduce((s, st) => s + Math.max(0, getStudentBookTotal(st) - (allTimePaidBksMap[st.id]||0)), 0);
-  const totalDue = outstandingFee + outstandingAF + outstandingBks;
-
-  const outstandingCount = students.filter(st => {
-    const cf   = Number(classFees[st.cls] || 0);
-    const ob   = Number(st.openingBalance || 0);
-    const disc = Math.max(dashStuDisc(st), allTimeDiscMap[st.id]||0);
-    const paid = allTimePaidMap[st.id] || 0;
-    return Math.max(0, Math.max(0, cf - disc) + ob - paid) > 0;
-  }).length;
+  const dashStuDisc = (st) => getStuDisc(st, classFees);
+  // ── getStuOutstanding() = single source of truth for ALL views ────────────
+  const outstandingFee  = students.reduce((s, st) => s + getStuOutstandingFromCutoff(st, classFees, _dashPaidMaps), 0);
+  const outstandingAF   = students.reduce((s, st) => s + Math.max(0, Number(st.annualFund||0) - (allTimePaidAFMap[st.id]||0)), 0);
+  const outstandingBks  = students.reduce((s, st) => s + Math.max(0, getStudentBookTotal(st) - (allTimePaidBksMap[st.id]||0)), 0);
+  const totalDue        = outstandingFee + outstandingAF + outstandingBks;
+  const outstandingCount = students.filter(st => getStuOutstandingFromCutoff(st, classFees, _dashPaidMaps) > 0).length;
 
   // Month-wise books collection
   const monthBooksCollected = monthPays.reduce((s, p) => s + Number(p.booksPaid || 0), 0);
@@ -1441,7 +1551,7 @@ function Dashboard({ setPage }) {
   const acctIcon = t => t === 'cash' ? '💵' : t === 'bank' ? '🏦' : '📱';
 
   const stats = [
-    { label: 'Total Students',   value: students.length,                        icon: '👨‍🎓', color: 'blue',   pg: 'students'   },
+    { label: 'Active Students',  value: students.filter(isActiveStu).length,    icon: '👨‍🎓', color: 'blue',   pg: 'students'   },
     { label: 'Fee Collected',    value: `Rs. ${collected.toLocaleString()}`,    icon: '💰', color: 'green',  pg: 'feecollect' },
     { label: 'Daily Expenses',   value: `Rs. ${totalExp.toLocaleString()}`,     icon: '🧾', color: 'red',    pg: 'expenses'   },
     { label: 'Annual Fund',      value: `Rs. ${annualFundTotal.toLocaleString()}`, subValue: annualFundExpected > 0 ? `of Rs. ${annualFundExpected.toLocaleString()}` : null, icon: '🏦', color: 'purple', pg: 'fees' },
@@ -1453,38 +1563,28 @@ function Dashboard({ setPage }) {
 
   const printDashboard = () => {
     const m = NOW.getMonth(), y = NOW.getFullYear();
-    const payments = S.get(K.PAY, []);
-    const expenses = S.get(K.EXP, []);
-    const monthPays = payments.filter(p => p.month === m && p.year === y);
-    const collected = monthPays.reduce((s,p) => s+Number(p.amount),0);
-    const annualFund = monthPays.reduce((s,p) => s+Number(p.annualFund||0),0);
-    const monthExp = expenses.filter(e => { const d=new Date(e.date); return d.getMonth()===m && d.getFullYear()===y; });
-    const totalExp = monthExp.reduce((s,e) => s+Number(e.amount),0);
-    const paidMap = {};
-    monthPays.forEach(p => { paidMap[p.stuId] = (paidMap[p.stuId]||0) + Number(p.amount); });
-    const allPayments = S.get(K.PAY, []);
-    const allPaidMap = {};
-    allPayments.forEach(p => { allPaidMap[p.stuId] = (allPaidMap[p.stuId]||0) + Number(p.amount); });
-    const allDiscMap = {};
-    allPayments.forEach(p => { allDiscMap[p.stuId] = (allDiscMap[p.stuId]||0) + Number(p.discount||0); });
-    const unpaid = students.filter(s => {
-      const cf = Number(classFees[s.cls]||0);
-      const ob = Number(s.openingBalance||0);
-      const disc = allDiscMap[s.id]||0;
-      const paid = allPaidMap[s.id]||0;
-      return Math.max(0, Math.max(0, cf - disc) + ob - paid) > 0;
-    });
-    const totalDue = unpaid.reduce((s,st) => {
-      const cf = Number(classFees[st.cls]||0);
-      const ob = Number(st.openingBalance||0);
-      const disc = allDiscMap[st.id]||0;
-      const paid = allPaidMap[st.id]||0;
-      return s + Math.max(0, Math.max(0, cf - disc) + ob - paid);
-    }, 0);
+    // ── Global Engine: buildPaidMaps + getStuOutstanding — identical to screen ──
+    const allPayments   = S.get(K.PAY, []);
+    const _printPMaps   = buildPaidMapsFromCutoff(allPayments);
+    const { feeMap: allPaidMap, discMap: allDiscMap } = _printPMaps;
+    const monthPays     = allPayments.filter(p => p.month === m && p.year === y);
+    const collected     = monthPays.reduce((s,p) => s+Number(p.amount),0);
+    const annualFund    = monthPays.reduce((s,p) => s+Number(p.annualFund||0),0);
+    // Use Cash Book for expense total — same source as P&L (single truth)
+    const cbAll    = S.get(K.CBOOK, []);
+    const totalExp = cbAll.filter(e => {
+      if (e.type !== 'expense') return false;
+      if (['owner_drawing','transfer'].includes(e.refType)) return false;
+      const d = new Date(e.date);
+      return d.getMonth() === m && d.getFullYear() === y;
+    }).reduce((s,e) => s+Number(e.amount||0), 0);
+    // getStuOutstanding — same function as Dashboard cards (guaranteed identical) ──
+    const unpaid   = students.filter(s => getStuOutstandingFromCutoff(s, classFees, _printPMaps) > 0);
+    const totalDue = unpaid.reduce((s,st) => s + getStuOutstandingFromCutoff(st, classFees, _printPMaps), 0);
     printPage('Dashboard Summary', `
       <h2>Dashboard Summary — ${MONTHS[m]} ${y}</h2>
       <div class="summary">
-        <div class="sum-card"><div class="val">${students.length}</div><div class="lbl">Total Students</div></div>
+        <div class="sum-card"><div class="val">${students.filter(isActiveStu).length}</div><div class="lbl">Active Students</div></div>
         <div class="sum-card"><div class="val">Rs. ${collected.toLocaleString()}</div><div class="lbl">Fee Collected</div></div>
         <div class="sum-card"><div class="val">Rs. ${annualFund.toLocaleString()}</div><div class="lbl">Annual Fund</div></div>
         <div class="sum-card"><div class="val">Rs. ${totalExp.toLocaleString()}</div><div class="lbl">Expenses</div></div>
@@ -1532,7 +1632,7 @@ function Dashboard({ setPage }) {
             <p>📚 Books: Rs. {totalBooksValue.toLocaleString()}</p>
           </div>
           <div className="mt-3 bg-white/20 rounded-xl px-3 py-1.5 text-xs font-semibold w-fit">
-            {students.length} students enrolled
+            {students.filter(isActiveStu).length} students enrolled
           </div>
         </div>
 
@@ -1721,6 +1821,77 @@ function Dashboard({ setPage }) {
         </div>
       </div>
 
+
+      {/* ── Tier 3: Annual P&L ── */}
+      <div className="mb-2">
+        <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">📊 Tier 3 — Annual Profit &amp; Loss ({y})</p>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 mb-6">
+        <div className="bg-green-50 border-2 border-green-200 rounded-2xl p-4">
+          <p className="text-xs font-bold text-green-700 uppercase tracking-widest mb-1">📈 Total Income</p>
+          <p className="text-2xl font-extrabold text-green-700">Rs. {plTotalIncome.toLocaleString()}</p>
+          <div className="mt-2 space-y-1 text-xs text-gray-500">
+            <div className="flex justify-between"><span>Fee</span><span className="font-semibold text-green-600">Rs. {plFeeIncome.toLocaleString()}</span></div>
+            <div className="flex justify-between"><span>Annual Fund</span><span className="font-semibold text-green-600">Rs. {plAFIncome.toLocaleString()}</span></div>
+            <div className="flex justify-between"><span>Books</span><span className="font-semibold text-green-600">Rs. {plBooksIncome.toLocaleString()}</span></div>
+            <div className="flex justify-between"><span>Other</span><span className="font-semibold text-green-600">Rs. {plCbIncome.toLocaleString()}</span></div>
+          </div>
+        </div>
+        <div className="bg-red-50 border-2 border-red-200 rounded-2xl p-4">
+          <p className="text-xs font-bold text-red-600 uppercase tracking-widest mb-1">📉 Total Expenses</p>
+          <p className="text-2xl font-extrabold text-red-600">Rs. {plTotalExp.toLocaleString()}</p>
+          <div className="mt-2 space-y-1 text-xs text-gray-500">
+            <div className="flex justify-between"><span>Operating</span><span className="font-semibold text-red-500">Rs. {plCbExpenses.toLocaleString()}</span></div>
+            <div className="flex justify-between"><span>Salaries</span><span className="font-semibold text-red-500">Rs. {plSalaryExp.toLocaleString()}</span></div>
+          </div>
+        </div>
+        <div className={`border-2 rounded-2xl p-4 ${plNet>=0?'bg-blue-50 border-blue-300':'bg-orange-50 border-orange-300'}`}>
+          <p className={`text-xs font-bold uppercase tracking-widest mb-1 ${plNet>=0?'text-blue-700':'text-orange-700'}`}>{plNet>=0?'✅ Net Profit':'⚠️ Net Loss'}</p>
+          <p className={`text-2xl font-extrabold ${plNet>=0?'text-blue-700':'text-orange-600'}`}>Rs. {Math.abs(plNet).toLocaleString()}</p>
+          <div className="mt-3">
+            <div className="w-full bg-gray-200 rounded-full h-2">
+              <div className={`h-2 rounded-full ${plNet>=0?'bg-blue-500':'bg-orange-400'}`} style={{width:plTotalIncome>0?`${Math.min(100,Math.round(Math.abs(plNet)/plTotalIncome*100))}%`:'0%'}}/>
+            </div>
+            <p className="text-xs text-gray-400 mt-1">{plTotalIncome>0?Math.round(Math.abs(plNet)/plTotalIncome*100):0}% {plNet>=0?'margin':'loss ratio'}</p>
+          </div>
+        </div>
+        <div className="bg-purple-50 border-2 border-purple-200 rounded-2xl p-4 cursor-pointer hover:bg-purple-100 transition-all"
+          onClick={()=>{ setPage('assets'); sessionStorage.setItem('_currentPage','assets'); }}>
+          <p className="text-xs font-bold text-purple-700 uppercase tracking-widest mb-1">🏛️ Asset Book Value</p>
+          <p className="text-2xl font-extrabold text-purple-700">Rs. {plAssetVal.toLocaleString()}</p>
+          <p className="text-xs text-gray-400 mt-1">{dashAssetCount} asset{dashAssetCount!==1?'s':''} tracked</p>
+          <div className="mt-3 bg-purple-100 text-purple-700 text-xs font-semibold px-3 py-1.5 rounded-xl text-center">→ View Assets &amp; P&amp;L</div>
+        </div>
+      </div>
+
+      {/* ── Owner Equity Widget ── */}
+      <div className="mb-6">
+        <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">🏦 Owner / Partner Equity (All-Time)</p>
+        <div className={`rounded-2xl border-2 p-5 ${plOwnerEquity>=0?'bg-emerald-50 border-emerald-300':'bg-red-50 border-red-300'}`}>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div>
+              <p className="text-xs font-bold text-gray-500 uppercase mb-1">💰 Capital Invested</p>
+              <p className="text-xl font-extrabold text-blue-700">Rs. {plOwnerCapital.toLocaleString()}</p>
+              <p className="text-xs text-gray-400 mt-0.5">Owner injections</p>
+            </div>
+            <div>
+              <p className="text-xs font-bold text-gray-500 uppercase mb-1">📈 Net Profit (All-Time)</p>
+              <p className={`text-xl font-extrabold ${plAllTimeNetPL>=0?'text-green-700':'text-red-600'}`}>Rs. {Math.abs(plAllTimeNetPL).toLocaleString()}</p>
+              <p className="text-xs text-gray-400 mt-0.5">{plAllTimeNetPL>=0?'Surplus':'Deficit'} accumulated</p>
+            </div>
+            <div>
+              <p className="text-xs font-bold text-gray-500 uppercase mb-1">💸 Drawings</p>
+              <p className="text-xl font-extrabold text-orange-600">Rs. {plOwnerDrawing.toLocaleString()}</p>
+              <p className="text-xs text-gray-400 mt-0.5">Withdrawals by owner</p>
+            </div>
+            <div className={`rounded-xl p-3 text-center ${plOwnerEquity>=0?'bg-emerald-100':'bg-red-100'}`}>
+              <p className="text-xs font-bold uppercase mb-1 text-gray-600">= Net Equity</p>
+              <p className={`text-2xl font-extrabold ${plOwnerEquity>=0?'text-emerald-700':'text-red-600'}`}>Rs. {Math.abs(plOwnerEquity).toLocaleString()}</p>
+              <p className="text-xs mt-0.5 font-semibold text-gray-500">Capital + Profit − Drawings</p>
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* ── Quick Stats Grid ── */}
       <div className="mb-2">
@@ -2058,7 +2229,7 @@ function printIdCard(s) {
     : `<div style="width:80px;height:80px;border-radius:50%;background:#dbeafe;border:3px solid #1e3a8a;margin:0 auto 10px;display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:900;color:#1e3a8a">${s.name[0]}</div>`;
   const win = window.open('', '_blank', 'width=420,height=320');
   if (!win) { alert('Popup blocked! Please allow popups for this site to print.'); return; }
-  win.document.write(`<!DOCTYPE html><html><head><title>ID Card — ${s.name}</title>
+  win.document.write(`<!DOCTYPE html><html><head><title>ID Card — ${esc(s.name)}</title>
   <style>
     *{margin:0;padding:0;box-sizing:border-box}
     body{font-family:'Segoe UI',Arial,sans-serif;background:#f1f5f9;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}
@@ -2086,8 +2257,8 @@ function printIdCard(s) {
       </div>
       <div class="photo-wrap">${photoHtml}</div>
       <div class="bottom">
-        <div class="stu-name">${s.name}</div>
-        <div class="father">S/O: ${s.father || '—'}</div>
+        <div class="stu-name">${esc(s.name)}</div>
+        <div class="father">S/O: ${esc(s.father || '—')}</div>
         <div class="badges">
           <span class="badge">Class ${s.cls}</span>
           <span class="badge roll">Roll # ${s.roll}</span>
@@ -2111,11 +2282,12 @@ function Students() {
   const isPrincipal  = role === 'principal';
   const canAdd       = isAdmin || isPrincipal; // principal can add new students
   const canWrite     = isAdmin;                // only admin can edit/delete
-  const [list, setList]     = useState(() => S.get(K.STU, []));
-  const [form, setForm]     = useState(null);
-  const [delId, setDelId]   = useState(null);
-  const [search, setSearch] = useState('');
-  const [fcls, setFcls]     = useState('All');
+  const [list, setList]       = useState(() => S.get(K.STU, []));
+  const [form, setForm]       = useState(null);
+  const [delId, setDelId]     = useState(null);
+  const [search, setSearch]   = useState('');
+  const [fcls, setFcls]       = useState('All');
+  const [statusFilter, setStatusFilter] = useState('active'); // 'active' | 'left' | 'all'
 
   // Refresh list when popup saves new students (without page reload)
   React.useEffect(() => {
@@ -2131,10 +2303,17 @@ function Students() {
 
   const save = () => {
     if (!form.name.trim() || !form.roll.trim()) return alert('Name and Roll Number are required.');
-    const updated = form.id
-      ? list.map(s => s.id === form.id ? form : s)
-      : [...list, { ...form, id: uid() }];
+    const isNew    = !form.id;
+    const savedId  = isNew ? uid() : form.id;
+    const saved    = { ...form, id: savedId };
+    const updated  = isNew ? [...list, saved] : list.map(s => s.id === form.id ? saved : s);
     persist(updated);
+    // ── Global Engine: audit every student create / edit ──────────────────
+    const sess = getSession() || {};
+    logAudit(sess.username || 'admin', sess.name || 'Admin',
+      isNew ? 'CREATE' : 'EDIT', 'Students',
+      isNew ? null : list.find(s => s.id === form.id),
+      saved);
     setForm(null);
   };
 
@@ -2142,10 +2321,14 @@ function Students() {
 
   const filtered = useMemo(() =>
     list.filter(s => {
-      const q = search.toLowerCase();
-      return (s.name.toLowerCase().includes(q) || s.roll.includes(q)) &&
-             (fcls === 'All' || s.cls === fcls);
-    }), [list, search, fcls]);
+      const q           = search.toLowerCase();
+      const matchSearch = s.name.toLowerCase().includes(q) || (s.roll||'').includes(q);
+      const matchCls    = fcls === 'All' || s.cls === fcls;
+      const matchStatus = statusFilter === 'all'  ? true
+                        : statusFilter === 'left' ? s.status === 'left'
+                        : s.status !== 'left';   // 'active' = default
+      return matchSearch && matchCls && matchStatus;
+    }), [list, search, fcls, statusFilter]);
 
   const printStudents = () => {
     printPage('Student List', `
@@ -2175,6 +2358,27 @@ function Students() {
         </div>
       </Card>
 
+      {/* ── Active / Left / All Filter Tabs ── */}
+      {(() => {
+        const activeCount = list.filter(s => s.status !== 'left').length;
+        const leftCount   = list.filter(s => s.status === 'left').length;
+        const tabs = [
+          { id:'active', label:'✅ Active',      count: activeCount },
+          { id:'left',   label:'🔴 Left School', count: leftCount   },
+          { id:'all',    label:'📋 All',          count: list.length },
+        ];
+        return (
+          <div className="flex gap-1 mb-4 bg-gray-100 p-1 rounded-xl w-fit flex-wrap">
+            {tabs.map(t => (
+              <button key={t.id} onClick={() => setStatusFilter(t.id)}
+                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${statusFilter===t.id ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                {t.label} ({t.count})
+              </button>
+            ))}
+          </div>
+        );
+      })()}
+
       {/* ── Summary Cards ── */}
       {list.length > 0 && (() => {
         const bookLists  = S.get(K.BL, {});
@@ -2184,12 +2388,13 @@ function Students() {
           const bl = bookLists[st.id] || [];
           return s + bl.reduce((bs, b) => bs + Number(b.price||0)*Number(b.qty||0), 0);
         }, 0);
-        const totalNetDue    = filtered.reduce((s, st) => s + Number(classFees[st.cls] || 0), 0);
-        const totalOpeningBal = filtered.reduce((s, st) => s + Number(st.openingBalance||0), 0);
-        const withAF    = filtered.filter(st => Number(st.annualFund||0) > 0).length;
-        const withBooks = filtered.filter(st => (bookLists[st.id]||[]).length > 0).length;
+        const activeFiltered = filtered.filter(isActiveStu);
+        // ── Global Engine: getStuNetMonthlyDue = classFee − discount (Khalis Amdani) ──
+        const totalNetDue = activeFiltered.reduce((s, st) => s + getStuNetMonthlyDue(st, classFees), 0);
+        const withAF    = activeFiltered.filter(st => Number(st.annualFund||0) > 0).length;
+        const withBooks = activeFiltered.filter(st => (bookLists[st.id]||[]).length > 0).length;
         return (
-          <div className="grid grid-cols-2 sm:grid-cols-6 gap-3 mb-4">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4">
             <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
               <p className="text-xs text-blue-500 font-semibold uppercase mb-1">👨‍🎓 Students</p>
               <p className="text-xl font-extrabold text-blue-700">{filtered.length}</p>
@@ -2198,7 +2403,7 @@ function Students() {
             <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3">
               <p className="text-xs text-red-500 font-semibold uppercase mb-1">📋 Net Due</p>
               <p className="text-xl font-extrabold text-red-600">Rs. {totalNetDue.toLocaleString()}</p>
-              <p className="text-xs text-gray-400 mt-0.5">Monthly fee total</p>
+              <p className="text-xs text-gray-400 mt-0.5">After discount (Khalis Amdani)</p>
             </div>
             <div className="bg-purple-50 border border-purple-200 rounded-xl px-4 py-3">
               <p className="text-xs text-purple-600 font-semibold uppercase mb-1">🏦 Annual Fund</p>
@@ -2210,15 +2415,11 @@ function Students() {
               <p className="text-xl font-extrabold text-amber-700">Rs. {totalBooks.toLocaleString()}</p>
               <p className="text-xs text-gray-400 mt-0.5">{withBooks} students have book lists</p>
             </div>
+            {/* Green card: renamed to OPENING — Net Due + AF + Books (no opening bal) */}
             <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3">
-              <p className="text-xs text-emerald-600 font-semibold uppercase mb-1">📊 Grand Total</p>
+              <p className="text-xs text-emerald-600 font-semibold uppercase mb-1">📊 Opening</p>
               <p className="text-xl font-extrabold text-emerald-700">Rs. {(totalNetDue + totalAF + totalBooks).toLocaleString()}</p>
-              <p className="text-xs text-gray-400 mt-0.5">Fee + AF + Books</p>
-            </div>
-            <div className={`border rounded-xl px-4 py-3 ${totalOpeningBal>0?'bg-orange-50 border-orange-200':'bg-gray-50 border-gray-200'}`}>
-              <p className="text-xs text-orange-500 font-semibold uppercase mb-1">⚖️ Opening Bal</p>
-              <p className="text-xl font-extrabold text-orange-600">Rs. {totalOpeningBal.toLocaleString()}</p>
-              <p className="text-xs text-gray-400 mt-0.5">Prev dues carried</p>
+              <p className="text-xs text-gray-400 mt-0.5">Net Due + AF + Books</p>
             </div>
           </div>
         );
@@ -2256,7 +2457,10 @@ function Students() {
                             ? <img src={s.photo} alt="" className="w-8 h-8 rounded-full object-cover border border-gray-200 shrink-0"/>
                             : <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xs shrink-0">{s.name[0]}</div>
                           }
-                          <div className="font-semibold text-gray-800">{s.name}</div>
+                          <div className="flex items-center gap-1.5">
+                            <span className={`font-semibold ${s.status==='left'?'text-gray-400 line-through':'text-gray-800'}`}>{s.name}</span>
+                            {s.status==='left' && <span className="text-xs bg-red-100 text-red-600 font-bold px-1.5 py-0.5 rounded-full">LEFT</span>}
+                          </div>
                         </div>
                       </td>
                       <td className="px-4 py-3 text-gray-500 hidden sm:table-cell">{s.father || '—'}</td>
@@ -2268,10 +2472,24 @@ function Students() {
                       <td className="px-4 py-3 hidden md:table-cell">{Number(s.openingBalance||0) > 0 ? <span className="text-orange-600 font-bold text-sm">Rs. {Number(s.openingBalance).toLocaleString()}</span> : <span className="text-gray-300">—</span>}</td>
                       <td className="px-4 py-3 text-gray-500 hidden md:table-cell">{s.contact || '—'}</td>
                       <td className="px-4 py-3 text-gray-500 hidden md:table-cell text-xs">{s.address || '—'}</td>
-                      <td className="px-4 py-3 text-right space-x-1">
-                        <Btn sm variant="outline" onClick={() => printIdCard(s)}>🪪 ID Card</Btn>
-                        {isAdmin && <Btn sm variant="outline" onClick={() => window.requireMasterCode(() => openEdit(s), `Edit student: ${s.name}`)}>Edit</Btn>}
-                        {isAdmin && <Btn sm variant="red" onClick={() => window.requireMasterCode(() => setDelId(s.id), `Delete student: ${s.name}`)}>Delete</Btn>}
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex flex-wrap gap-1 justify-end">
+                          <Btn sm variant="outline" onClick={() => printIdCard(s)}>🪪 ID Card</Btn>
+                          {/* ── Quick Re-activate — only shown for left students ── */}
+                          {isAdmin && s.status === 'left' && (
+                            <Btn sm variant="green" onClick={() => window.requireMasterCode(() => {
+                              const reactivated = { ...s, status: 'active', leftDate: '' };
+                              const updated = list.map(x => x.id === s.id ? reactivated : x);
+                              persist(updated);
+                              const sess = getSession() || {};
+                              logAudit(sess.username || 'admin', sess.name || 'Admin', 'EDIT', 'Students', s, reactivated);
+                            }, `Re-activate student: ${s.name}`)}>
+                              ✅ Re-activate
+                            </Btn>
+                          )}
+                          {isAdmin && <Btn sm variant="outline" onClick={() => window.requireMasterCode(() => openEdit(s), `Edit student: ${s.name}`)}>Edit</Btn>}
+                          {isAdmin && <Btn sm variant="red" onClick={() => window.requireMasterCode(() => setDelId(s.id), `Delete student: ${s.name}`)}>Delete</Btn>}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -2290,6 +2508,29 @@ function Students() {
 
       {form && (
         <Modal title={form.id ? '✏️ Edit Student' : '🎓 Add New Student'} onClose={() => setForm(null)} xl>
+
+          {/* ── Left-student re-activation banner — shown at top for instant visibility ── */}
+          {form.id && form.status === 'left' && (
+            <div className="bg-red-50 border-2 border-red-300 rounded-xl px-4 py-3 mb-4 flex flex-col sm:flex-row sm:items-center gap-3">
+              <div className="flex-1">
+                <p className="font-bold text-red-700 text-sm">🔴 This student is currently marked as Left School</p>
+                <p className="text-xs text-red-500 mt-0.5">Fee billing and outstanding calculations are paused. Use the button to re-enrol.</p>
+              </div>
+              <button
+                onClick={() => setForm({...form, status: 'active', leftDate: ''})}
+                className="shrink-0 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2 rounded-xl transition-all">
+                ✅ Re-activate This Student
+              </button>
+            </div>
+          )}
+
+          {/* ── Active-student confirmation banner ── */}
+          {form.id && form.status !== 'left' && (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2 mb-3 flex items-center gap-2 text-xs text-emerald-700 font-semibold">
+              ✅ Active — included in fee billing and all financial reports
+            </div>
+          )}
+
           {/* ── Row 1: Basic Info ── */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-0">
             <Inp label="Student Full Name *" value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="Student full name"/>
@@ -2344,6 +2585,28 @@ function Students() {
               <Inp label="Family ID / Serial No." value={form.familyId||''} onChange={e => setForm({...form, familyId: e.target.value})} placeholder="e.g. F-001"/>
             </div>
             <Inp label="Sibling Discount (Rs./month)" type="number" min="0" value={form.siblingDiscount||''} onChange={e => setForm({...form, siblingDiscount: e.target.value})} placeholder="Monthly discount for being a sibling — 0 if none"/>
+          </div>
+          {/* ── Student Status ── */}
+          <div className="border-t border-gray-100 pt-3 mt-1 mb-1">
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">📋 Student Status</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-0">
+              <div className="mb-3">
+                <label className="block text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wide">Status</label>
+                <select value={form.status||'active'} onChange={e=>setForm({...form,status:e.target.value})}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+                  <option value="active">✅ Active</option>
+                  <option value="left">🔴 Left School</option>
+                </select>
+              </div>
+              {(form.status==='left') && (
+                <Inp label="Left Date" type="date" value={form.leftDate||''} onChange={e=>setForm({...form,leftDate:e.target.value})}/>
+              )}
+            </div>
+            {form.status==='left' && (
+              <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-2 mb-2 text-xs text-red-700">
+                🔴 This student will be excluded from all future fee billing and outstanding calculations. Historical payment records are preserved.
+              </div>
+            )}
           </div>
           {/* ── Row: Contact / Address ── */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-0">
@@ -2424,12 +2687,21 @@ function Inventory() {
     const item = { ...form, id: itemId, qty, price: Math.max(0, Number(form.price)), threshold: Math.max(0, Number(form.threshold)) };
     const updated = form.id ? items.map(i => i.id === form.id ? item : i) : [...items, item];
     persistItems(updated);
-    // If new item with initial qty AND a vendor selected → add to vendor ledger
-    if (!form.id && qty > 0 && form.vendorId) {
+    if (!form.id && qty > 0) {
       const price = Math.max(0, Number(form.price));
-      const sbook = S.get(K.SBOOK, []);
-      const delivery = { id: uid(), vendorId: form.vendorId, name: form.name.trim(), cls: 'INV', qty, price, year: NOW.getFullYear(), note: 'Initial stock entry', invItem: true, date: new Date().toISOString() };
-      S.set(K.SBOOK, [...sbook, delivery]);
+      if (form.vendorId) {
+        // Vendor-linked initial stock → SBOOK; payment tracked via VendorBooks
+        const sbook = S.get(K.SBOOK, []);
+        const delivery = { id: uid(), vendorId: form.vendorId, name: form.name.trim(), cls: 'INV', qty, price, year: NOW.getFullYear(), note: 'Initial stock entry', invItem: true, date: new Date().toISOString() };
+        S.set(K.SBOOK, [...sbook, delivery]);
+      } else if (price > 0) {
+        // ── Global Engine: direct cash purchase → Cash Book expense ──────
+        addCashBookEntry('expense',
+          `Initial Inventory — ${form.name.trim()} (×${qty})`,
+          price * qty, 'Cash',
+          new Date().toISOString().slice(0, 10),
+          'Initial stock purchase (direct)', 'inventory');
+      }
     }
     setForm(null);
   };
@@ -2447,12 +2719,21 @@ function Inventory() {
     const newTx = { id: uid(), itemId: stockMod.item.id, type: stockMod.mode, qty, date: new Date().toISOString(), note: sNote, vendorId: stockMod.mode === 'in' ? (sVendorId || '') : '' };
     persistItems(updatedItems);
     persistTxs([...txs, newTx]);
-    // If stock-in from a vendor, add to vendor ledger (SBOOK/inventory deliveries)
-    if (stockMod.mode === 'in' && sVendorId) {
+    if (stockMod.mode === 'in') {
       const price = Number(stockMod.item.price) || 0;
-      const sbook = S.get(K.SBOOK, []);
-      const delivery = { id: uid(), vendorId: sVendorId, name: stockMod.item.name, cls: 'INV', qty, price, year: NOW.getFullYear(), note: sNote || 'Inventory delivery', invItem: true, date: new Date().toISOString() };
-      S.set(K.SBOOK, [...sbook, delivery]);
+      if (sVendorId) {
+        // Vendor-linked: log in SBOOK; cash book entry made when vendor payment is recorded
+        const sbook = S.get(K.SBOOK, []);
+        const delivery = { id: uid(), vendorId: sVendorId, name: stockMod.item.name, cls: 'INV', qty, price, year: NOW.getFullYear(), note: sNote || 'Inventory delivery', invItem: true, date: new Date().toISOString() };
+        S.set(K.SBOOK, [...sbook, delivery]);
+      } else if (price > 0) {
+        // ── Global Engine: direct cash purchase → Cash Book expense ──────
+        addCashBookEntry('expense',
+          `Inventory Purchase — ${stockMod.item.name} (×${qty})`,
+          price * qty, 'Cash',
+          new Date().toISOString().slice(0, 10),
+          sNote || 'Direct stock-in purchase', 'inventory');
+      }
     }
     setStockMod(null); setSQty(''); setSNote(''); setSVendorId('');
   };
@@ -2748,8 +3029,7 @@ function Fees() {
     payments.filter(p => p.month === vm && p.year === vy).forEach(p => { paid[p.stuId] = p; });
     return students.map(s => {
       const cf       = Number(classFees[s.cls] || 0);
-      const sr       = Number(s.monthlyFee || 0);
-      const autoDisc = sr > 0 && sr < cf ? cf - sr : 0;
+      const autoDisc = getStuDisc(s, classFees);
       return { stu: s, pay: paid[s.id] || null, due: cf, autoDisc };
     });
   }, [students, payments, classFees, vm, vy]);
@@ -2884,6 +3164,7 @@ function Fees() {
                 const totalAF          = status.reduce((s, r) => s + Number(r.pay?.annualFund || 0), 0);
                 const totalBooksCol    = status.reduce((s, r) => s + Number(r.pay?.booksPaid || 0), 0);
                 const grandCollected   = totalCollected + totalAF + totalBooksCol;
+                // Monthly outstanding (what's owed for this specific month only)
                 const totalOutstanding = status.reduce((s, r) => {
                   const disc    = Number(r.pay?.discount||0) || r.autoDisc||0;
                   const netBase = Math.max(0, Number(r.due||0) - disc);
@@ -2891,6 +3172,9 @@ function Fees() {
                   if (r.pay && Number(r.pay.amount) < netBase) return s + (netBase - Number(r.pay.amount));
                   return s;
                 }, 0);
+                // ── Global Engine: all-time balance — same number as Dashboard & Fee Collection ──
+                const _ledgerPaidMaps  = buildPaidMapsFromCutoff(payments);
+                const allTimeBalance   = students.reduce((s, st) => s + getStuOutstandingFromCutoff(st, classFees, _ledgerPaidMaps), 0);
                 return (
                   <>
                     {/* Summary bar */}
@@ -2903,13 +3187,18 @@ function Fees() {
                         {totalBooksCol > 0 && <p className="text-xs text-amber-500 mt-0.5">+ Books: Rs. {totalBooksCol.toLocaleString()}</p>}
                         {(totalAF > 0 || totalBooksCol > 0) && <p className="text-xs font-bold text-emerald-700 mt-1">Grand: Rs. {grandCollected.toLocaleString()}</p>}
                       </div>
-                      {/* Outstanding */}
+                      {/* Outstanding — Monthly + All-Time */}
                       <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3">
-                        <p className="text-xs text-red-500 font-semibold uppercase mb-1">⚠️ Outstanding</p>
+                        <p className="text-xs text-red-500 font-semibold uppercase mb-1">⚠️ This Month Unpaid</p>
                         <p className="text-lg font-extrabold text-red-600">Rs. {totalOutstanding.toLocaleString()}</p>
                         <p className="text-xs text-gray-500 mt-0.5">Fee Due: Rs. {totalNetDue.toLocaleString()}</p>
                         <p className="text-xs text-emerald-600 mt-0.5">− Collected: Rs. {totalCollected.toLocaleString()}</p>
-                        <p className="text-xs font-bold text-red-600 mt-1">Balance: Rs. {totalOutstanding.toLocaleString()}</p>
+                        {/* All-time balance — from global engine (matches Dashboard exactly) */}
+                        <div className="border-t border-red-200 mt-2 pt-1.5">
+                          <p className="text-xs text-orange-600 font-bold">📊 All-Time Balance Due:</p>
+                          <p className="text-sm font-extrabold text-orange-700">Rs. {allTimeBalance.toLocaleString()}</p>
+                          <p className="text-xs text-gray-400">Same as Dashboard ✓</p>
+                        </div>
                       </div>
                       {/* Total Fee Due */}
                       <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
@@ -2979,7 +3268,7 @@ function Fees() {
                                 <td className="px-4 py-3 text-right">
                                   {pay
                                     ? <Btn sm variant="outline" onClick={() => printReceipt(pay, stu)}>🖨️ Receipt</Btn>
-                                    : <Btn sm onClick={() => { const cf=Number(classFees[stu.cls]||0); const sr=Number(stu.monthlyFee||0); const ad=sr>0&&sr<cf?cf-sr:0; setPayMod(stu); setPf({ month: vm, year: vy, amount: '', discount: ad>0?String(ad):'', annualFund: '0', note:'', paymentMethod:'Cash' }); }}>Record Payment</Btn>
+                                    : <Btn sm onClick={() => { const ad=getStuDisc(stu, classFees); setPayMod(stu); setPf({ month: vm, year: vy, amount: '', discount: ad>0?String(ad):'', annualFund: '0', note:'', paymentMethod:'Cash' }); }}>Record Payment</Btn>
                                   }
                                 </td>
                               </tr>
@@ -3257,10 +3546,9 @@ function FeeCollection() {
       const totalPaid = stuPays.reduce((s,p) => s+Number(p.amount||0), 0);
       const ob   = Number(stu.openingBalance || 0);
       const payDisc = stuPays.reduce((s,p) => s+Number(p.discount||0), 0);
-      const stuRate = Number(stu.monthlyFee || 0);
-      const autoDisc = stuRate > 0 && stuRate < due ? due - stuRate : 0;
+      const autoDisc = getStuDisc(stu, classFees);
       const disc = Math.max(payDisc, autoDisc);
-      const netDue = Math.max(0, due - disc);
+      const netDue = getStuNetMonthlyDue(stu, classFees);
       const outstanding = Math.max(0, netDue + ob - totalPaid);
       const payRows = stuPays.map(p =>
         `<tr><td>${MONTHS[p.month]} ${p.year}</td><td>${p.rcpt||'—'}</td><td>Rs. ${Number(p.amount).toLocaleString()}</td><td>${p.discount>0?'Rs. '+Number(p.discount).toLocaleString():'—'}</td><td>${p.annualFund>0?'Rs. '+Number(p.annualFund).toLocaleString():'—'}</td><td>${p.paymentMethod||'Cash'}</td></tr>`
@@ -3296,16 +3584,8 @@ function FeeCollection() {
     return map;
   }, [payments, vm, vy]);
 
-  // All-time paid map (across ALL months) — used for closing balance & totalBalanceDue card
-  const allTimePaidMapFC = useMemo(() => {
-    const map = {};
-    payments.forEach(p => {
-      if (!map[p.stuId]) map[p.stuId] = { total: 0, totalDisc: 0 };
-      map[p.stuId].total     += Number(p.amount || 0);
-      map[p.stuId].totalDisc += Number(p.discount || 0);
-    });
-    return map;
-  }, [payments]);
+  // ── Global Engine: buildPaidMaps — single source of truth (replaces manual map) ──
+  const allTimePaidMapFC = useMemo(() => buildPaidMapsFromCutoff(payments), [payments]);
 
   const getStatus = (stu) => {
     const due  = Number(classFees[stu.cls] || 0);
@@ -3314,8 +3594,7 @@ function FeeCollection() {
     if (paid <= 0) return 'unpaid';
     // Net due = class fee − discounts + opening balance carry-forward
     // monthlyFee = student's personal rate; discount = classFee - monthlyFee
-    const stuRate      = Number(stu.monthlyFee || 0) || Number(stu.annualFund || 0);
-    const autoDisc     = stuRate > 0 && stuRate < due ? due - stuRate : 0;
+    const autoDisc     = getStuDisc(stu, classFees);
     const totalDisc    = info ? info.totalDisc : autoDisc;
     const openingBal   = Number(stu.openingBalance || 0);
     const netDue       = Math.max(0, due - totalDisc) + openingBal;
@@ -3347,9 +3626,8 @@ function FeeCollection() {
     const openingBal  = Number(stu.openingBalance || 0);
     const alreadyPaid = paidMap[stu.id]?.total || 0;
     // Auto discount: monthlyFee = student's personal rate; discount = classFee - monthlyFee
-    const stuRate     = Number(stu.monthlyFee || 0) || Number(stu.annualFund || 0);
-    const autoDisc    = stuRate > 0 && stuRate < due ? due - stuRate : 0;
-    const netMonthly  = Math.max(0, due - autoDisc); // student's monthly net fee
+    const autoDisc    = getStuDisc(stu, classFees);
+    const netMonthly  = getStuNetMonthlyDue(stu, classFees); // student's monthly net fee
     const totalDue    = netMonthly + openingBal;      // total owed including prior balance
     const balance     = Math.max(0, totalDue - alreadyPaid);
     setCollMod({ stu, alreadyPaid, balance, openingBal, totalDue });
@@ -3451,17 +3729,10 @@ function FeeCollection() {
   const fullPaidCount    = students.filter(s => getStatus(s) === 'paid').length;
   const partialCount     = students.filter(s => getStatus(s) === 'partial').length;
   const unpaidCount      = students.filter(s => getStatus(s) === 'unpaid').length;
-  const netDueTotal      = students.reduce((s, st) => s + Number(classFees[st.cls] || 0), 0);
-  const totalBalanceDue  = students.reduce((s, st) => {
-    const due      = Number(classFees[st.cls] || 0);
-    const stuRate  = Number(st.monthlyFee || 0);
-    const autoDisc = stuRate > 0 && stuRate < due ? due - stuRate : 0;
-    const atInfo   = allTimePaidMapFC[st.id];
-    const paid     = atInfo ? atInfo.total : 0;
-    const disc     = atInfo ? Math.max(atInfo.totalDisc, autoDisc) : autoDisc;
-    const ob       = Number(st.openingBalance || 0);
-    return s + Math.max(0, Math.max(0, due - disc) + ob - paid);
-  }, 0);
+  // ── Global Engine: getStuNetMonthlyDue = classFee − discount (Khalis Amdani) ──
+  const netDueTotal      = students.reduce((s, st) => s + getStuNetMonthlyDue(st, classFees), 0);
+  // ── Global Engine: getStuOutstanding — identical formula to Dashboard ─────
+  const totalBalanceDue = students.reduce((s, st) => s + getStuOutstandingFromCutoff(st, classFees, allTimePaidMapFC), 0);
 
   // Ledger: all-time payment history per student (or selected student)
   const ledgerStudents = ledgerStu ? students.filter(s => s.id === ledgerStu) : students;
@@ -3490,24 +3761,13 @@ function FeeCollection() {
   const splitPreview = useMemo(() => {
     if (!familyMod || !Number(familyForm.totalAmount)) return [];
     const total = Number(familyForm.totalAmount);
-    // Use selected month/year paid map (not all-time)
-    const selPaid = {};
-    payments.filter(p => p.month === familyForm.month && p.year === familyForm.year).forEach(p => {
-      if (!selPaid[p.stuId]) selPaid[p.stuId] = { total: 0, totalDisc: 0 };
-      selPaid[p.stuId].total    += Number(p.amount || 0);
-      selPaid[p.stuId].totalDisc += Number(p.discount || 0);
-    });
-    // Build sibling data first
+    // ── Single Engine: use getStuOutstanding for all-time outstanding per student ──
+    const paidMaps = buildPaidMapsFromCutoff(payments);
     const data = familyMod.siblings.map(stu => {
-      const due      = Number(classFees[stu.cls] || 0);
-      const stuRate  = Number(stu.monthlyFee || 0);
-      const autoDisc = stuRate > 0 && stuRate < due ? due - stuRate : 0;
-      const info     = selPaid[stu.id];
-      const paid     = info ? info.total : 0;
-      const disc     = info ? Math.max(info.totalDisc, autoDisc) : autoDisc;
-      const ob       = Number(stu.openingBalance || 0);
-      const outstanding = Math.max(0, Math.max(0, due - disc) + ob - paid);
-      return { stu, due, paid, disc, ob, outstanding, allocate: 0 };
+      const outstanding = parseFloat(getStuOutstandingFromCutoff(stu, classFees, paidMaps).toFixed(2));
+      const due = Number(classFees[stu.cls] || 0);
+      const paid = paidMaps.feeMap[stu.id] || 0;
+      return { stu, due, paid, outstanding, allocate: 0 };
     });
     // Equal split with redistribution of excess
     let remaining = total;
@@ -3719,14 +3979,14 @@ function FeeCollection() {
                       {filtered.map((stu, idx) => {
                         const due        = Number(classFees[stu.cls] || 0);
                         // monthlyFee = student's personal rate → auto discount = classFee - monthlyFee
-                        const stuRate    = Number(stu.monthlyFee || 0) || Number(stu.annualFund || 0);
-                        const autoDisc   = stuRate > 0 && stuRate < due ? due - stuRate : 0;
+                        const autoDisc   = getStuDisc(stu, classFees);
                         const info       = paidMap[stu.id];
                         const paid       = info ? info.total : 0;
                         // disc: use recorded discount from payments; if no payment yet, use auto-disc from profile
                         const disc       = info ? Math.max(info.totalDisc, autoDisc) : autoDisc;
                         const openingBal = Number(stu.openingBalance || 0);
-                        const netDue     = Math.max(0, due - disc) + openingBal;
+                        // Net Due = Fee − Discount only (Khalis Amdani — no opening bal)
+                        const netDue     = Math.max(0, due - disc);
                         const status     = getStatus(stu);
                         const lastPay = info ? [...info.pays].sort((a,b)=>new Date(b.date)-new Date(a.date))[0] : null;
                         return (
@@ -3824,16 +4084,8 @@ function FeeCollection() {
                         </td>
                         <td className="px-4 py-3">
                           {(() => {
-                            const total = filtered.reduce((sum, stu) => {
-                              const due      = Number(classFees[stu.cls] || 0);
-                              const stuRate  = Number(stu.monthlyFee || 0);
-                              const autoDisc = stuRate > 0 && stuRate < due ? due - stuRate : 0;
-                              const atInfo   = allTimePaidMapFC[stu.id];
-                              const paid     = atInfo ? atInfo.total : 0;
-                              const disc     = atInfo ? Math.max(atInfo.totalDisc, autoDisc) : autoDisc;
-                              const ob       = Number(stu.openingBalance || 0);
-                              return sum + Math.max(0, Math.max(0, due - disc) + ob - paid);
-                            }, 0);
+                            // ── Global Engine: getStuOutstanding — same as all other views ──
+                            const total = filtered.reduce((sum, stu) => sum + getStuOutstandingFromCutoff(stu, classFees, allTimePaidMapFC), 0);
                             return (
                               <div>
                                 <span className={`font-extrabold text-base ${total > 0 ? 'text-red-400' : 'text-emerald-400'}`}>
@@ -3871,22 +4123,12 @@ function FeeCollection() {
           {/* ── Closing Balance Summary Card ── */}
           {(() => {
             const vis = ledgerStudents.filter(s => fcls === 'All' || s.cls === fcls);
-            const closingBal = vis.reduce((sum, stu) => {
-              const due      = Number(classFees[stu.cls] || 0);
-              const stuRate  = Number(stu.monthlyFee || 0);
-              const autoDisc = stuRate > 0 && stuRate < due ? due - stuRate : 0;
-              const atInfo   = allTimePaidMapFC[stu.id];
-              const paid     = atInfo ? atInfo.total : 0;
-              const disc     = atInfo ? Math.max(atInfo.totalDisc, autoDisc) : autoDisc;
-              const ob       = Number(stu.openingBalance || 0);
-              return sum + Math.max(0, Math.max(0, due - disc) + ob - paid);
-            }, 0);
-            const totalPaidAll = vis.reduce((sum, stu) => sum + (allTimePaidMapFC[stu.id]?.total || 0), 0);
+            // ── Global Engine: getStuOutstanding — same formula as all views ──
+            const closingBal   = vis.reduce((sum, stu) => sum + getStuOutstandingFromCutoff(stu, classFees, allTimePaidMapFC), 0);
+            const totalPaidAll = vis.reduce((sum, stu) => sum + (allTimePaidMapFC.feeMap[stu.id] || 0), 0);
             const totalDueAll  = vis.reduce((sum, stu) => {
               const due = Number(classFees[stu.cls] || 0);
-              const stuRate = Number(stu.monthlyFee || 0);
-              const autoDisc = stuRate > 0 && stuRate < due ? due - stuRate : 0;
-              const disc = Math.max(allTimePaidMapFC[stu.id]?.totalDisc || 0, autoDisc);
+              const disc = Math.max(allTimePaidMapFC.discMap[stu.id] || 0, getStuDisc(stu, classFees));
               const ob = Number(stu.openingBalance || 0);
               return sum + Math.max(0, due - disc) + ob;
             }, 0);
@@ -4022,16 +4264,10 @@ function FeeCollection() {
           {familyGroups.length === 0
             ? <Empty icon="👨‍👧‍👦" text="No families found. Make sure siblings share the same Family Name or Father's Name in student records." />
             : familyGroups.map(([familyKey, siblings]) => {
-                const totalOutstanding = siblings.reduce((s, stu) => {
-                  const due      = Number(classFees[stu.cls] || 0);
-                  const stuRate  = Number(stu.monthlyFee || 0);
-                  const autoDisc = stuRate > 0 && stuRate < due ? due - stuRate : 0;
-                  const atInfo   = allTimePaidMapFC[stu.id];
-                  const paid     = atInfo ? atInfo.total : 0;
-                  const disc     = atInfo ? Math.max(atInfo.totalDisc, autoDisc) : autoDisc;
-                  const ob       = Number(stu.openingBalance || 0);
-                  return s + Math.max(0, Math.max(0, due - disc) + ob - paid);
-                }, 0);
+                const _fcPaidMaps = buildPaidMapsFromCutoff(payments);
+                const totalOutstanding = parseFloat(
+                  siblings.reduce((s, stu) => s + getStuOutstandingFromCutoff(stu, classFees, _fcPaidMaps), 0).toFixed(2)
+                );
                 const allPaid = totalOutstanding === 0;
                 return (
                   <Card key={familyKey} className="mb-4 overflow-hidden">
@@ -4061,14 +4297,8 @@ function FeeCollection() {
                         </thead>
                         <tbody className="divide-y divide-gray-50">
                           {siblings.map(stu => {
-                            const due      = Number(classFees[stu.cls] || 0);
-                            const stuRate  = Number(stu.monthlyFee || 0);
-                            const autoDisc = stuRate > 0 && stuRate < due ? due - stuRate : 0;
-                            const atInfo   = allTimePaidMapFC[stu.id];
-                            const paid     = atInfo ? atInfo.total : 0;
-                            const disc     = atInfo ? Math.max(atInfo.totalDisc, autoDisc) : autoDisc;
-                            const ob       = Number(stu.openingBalance || 0);
-                            const outstanding = Math.max(0, Math.max(0, due - disc) + ob - paid);
+                            // ── Global Engine: getStuOutstanding ──────────────────────────
+                            const outstanding = getStuOutstandingFromCutoff(stu, classFees, allTimePaidMapFC);
                             const st          = getStatus(stu);
                             return (
                               <tr key={stu.id} className="hover:bg-slate-50">
@@ -4616,11 +4846,32 @@ function Expenses() {
     if (!form.title.trim()) return alert('Title is required.');
     if (!form.amount || Number(form.amount) <= 0) return alert('Enter a valid amount.');
     const item = { ...form, amount: Number(form.amount), paymentMethod: form.paymentMethod || 'Cash' };
+    // ── Build Cash Book description (Advance Paid gets richer label) ──────
+    const cbDesc = item.category === 'Advance Paid' && item.advanceName
+      ? `Advance Paid to ${item.advanceName} [${item.advanceFor}] — ${item.title}`
+      : `${item.title} (${item.category})`;
+    const cbRefType = item.category === 'Advance Paid' ? 'advance' : undefined;
+
     if (!form.id) {
-      addCashBookEntry('expense', `${item.title} (${item.category})`, item.amount, item.paymentMethod, item.date, item.note);
+      // ── Global Engine: new expense — create linked Cash Book entry ─────
+      const cbId = uid();
+      item.cbEntryId = cbId;
+      addCashBookEntry('expense', cbDesc,
+        item.amount, item.paymentMethod, item.date, item.note, cbRefType, cbId);
+      persist([...list, { ...item, id: uid() }]);
+    } else {
+      // ── Global Engine: edit — keep linked Cash Book entry in sync ──────
+      if (item.cbEntryId) {
+        S.set(K.CBOOK, S.get(K.CBOOK, []).map(e => e.id === item.cbEntryId
+          ? { ...e,
+              description: cbDesc,
+              amount: item.amount,
+              note: item.note || '',
+              date: item.date ? item.date.slice(0, 10) : e.date }
+          : e));
+      }
+      persist(list.map(e => e.id === form.id ? item : e));
     }
-    const updated = form.id ? list.map(e => e.id === form.id ? item : e) : [...list, { ...item, id: uid() }];
-    persist(updated);
     setForm(null);
   };
 
@@ -4634,7 +4885,7 @@ function Expenses() {
   const monthFee = payments.filter(p => p.month === fm && p.year === fy).reduce((s,p) => s + Number(p.amount), 0);
   const net = monthFee - total;
 
-  const CATS = ['Salary','Utilities','Maintenance','Stationery','Rent','Transport','Food','Other'];
+  const CATS = ['Salary','Utilities','Maintenance','Stationery','Rent','Transport','Food','Advance Paid','Other'];
 
   const printExpenses = () => {
     const sorted = [...filtered].sort((a,b)=>new Date(a.date)-new Date(b.date));
@@ -4646,7 +4897,10 @@ function Expenses() {
         <div class="sum-card"><div class="val">Rs. ${net.toLocaleString()}</div><div class="lbl">Net Balance</div></div>
       </div>
       <table><thead><tr><th>#</th><th>Date</th><th>Title</th><th>Category</th><th>Note</th><th>Amount (Rs.)</th></tr></thead>
-      <tbody>${sorted.map((e,i)=>`<tr><td>${i+1}</td><td>${new Date(e.date).toLocaleDateString('en-PK')}</td><td><b>${e.title}</b></td><td><span class="badge b-purple">${e.category}</span></td><td>${e.note||'—'}</td><td>Rs. ${Number(e.amount).toLocaleString()}</td></tr>`).join('')}</tbody>
+      <tbody>${sorted.map((e,i)=>{
+        const advLabel = e.category==='Advance Paid' && e.advanceName ? `<br/><span style="font-size:10px;color:#d97706">→ ${esc(e.advanceName)} (${esc(e.advanceFor||'')})</span>` : '';
+        return `<tr><td>${i+1}</td><td>${new Date(e.date).toLocaleDateString('en-PK')}</td><td><b>${esc(e.title)}</b>${advLabel}</td><td><span class="badge ${e.category==='Advance Paid'?'b-yellow':'b-purple'}">${esc(e.category)}</span></td><td>${esc(e.note||'—')}</td><td>Rs. ${Number(e.amount).toLocaleString()}</td></tr>`;
+      }).join('')}</tbody>
       <tfoot><tr><td colspan="5" style="text-align:right"><b>Total:</b></td><td><b>Rs. ${total.toLocaleString()}</b></td></tr></tfoot>
       </table>`);
   };
@@ -4657,7 +4911,7 @@ function Expenses() {
         <h2 className="text-xl font-bold text-gray-800">Daily Expenses</h2>
         <div className="flex gap-2">
           <Btn variant="outline" onClick={printExpenses}>🖨️ Print</Btn>
-          {canAdd && <Btn onClick={() => setForm({ title:'', amount:'', category:'Other', date: new Date().toISOString().slice(0,10), note:'', paymentMethod:'Cash' })}>+ Add Expense</Btn>}
+          {canAdd && <Btn onClick={() => setForm({ title:'', amount:'', category:'Other', date: new Date().toISOString().slice(0,10), note:'', paymentMethod:'Cash', advanceFor:'', advanceName:'' })}>+ Add Expense</Btn>}
         </div>
       </div>
 
@@ -4706,8 +4960,15 @@ function Expenses() {
                     <tr key={e.id} className="hover:bg-slate-50">
                       <td className="px-4 py-3 text-xs font-bold text-gray-400">{String(idx+1).padStart(2,'0')}</td>
                       <td className="px-4 py-3 text-gray-500 text-xs">{new Date(e.date).toLocaleDateString('en-PK')}</td>
-                      <td className="px-4 py-3 font-semibold text-gray-800">{e.title}</td>
-                      <td className="px-4 py-3 hidden sm:table-cell"><Badge color="purple">{e.category}</Badge></td>
+                      <td className="px-4 py-3">
+                        <span className="font-semibold text-gray-800">{e.title}</span>
+                        {e.category === 'Advance Paid' && e.advanceName && (
+                          <div className="text-xs text-amber-600 font-semibold mt-0.5">→ {e.advanceName} ({e.advanceFor})</div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 hidden sm:table-cell">
+                        <Badge color={e.category === 'Advance Paid' ? 'yellow' : 'purple'}>{e.category}</Badge>
+                      </td>
                       <td className="px-4 py-3 hidden sm:table-cell text-gray-400 text-xs">{e.note || '—'}</td>
                       <td className="px-4 py-3 text-right font-bold text-red-600">Rs. {Number(e.amount).toLocaleString()}</td>
                       <td className="px-4 py-3 text-right space-x-1">
@@ -4734,7 +4995,51 @@ function Expenses() {
         <Modal title={form.id ? 'Edit Expense' : 'Add Expense'} onClose={() => setForm(null)}>
           <Inp label="Title *" value={form.title} onChange={e => setForm({...form, title: e.target.value})} placeholder="e.g. Electricity Bill"/>
           <Inp label="Amount (Rs.) *" type="number" min="1" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})}/>
-          <Sel label="Category" value={form.category} onChange={e => setForm({...form, category: e.target.value})} options={CATS}/>
+          <Sel label="Category" value={form.category} onChange={e => setForm({...form, category: e.target.value, advanceFor:'', advanceName:''})} options={CATS}/>
+
+          {/* ── Advance Paid — who is it for? ── */}
+          {form.category === 'Advance Paid' && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-3">
+              <p className="text-xs font-bold text-amber-700 uppercase tracking-wide mb-2">💰 Advance Details</p>
+              <Field label="Advance For *">
+                <select value={form.advanceFor||''} onChange={e => setForm({...form, advanceFor: e.target.value, advanceName:''})} className={inputCls}>
+                  <option value="">Select type…</option>
+                  <option value="Staff">👩‍🏫 Staff Member</option>
+                  <option value="Vendor">🏪 Vendor / Supplier</option>
+                  <option value="Other">📋 Other</option>
+                </select>
+              </Field>
+              {form.advanceFor === 'Staff' && (
+                <Field label="Staff Member *">
+                  <select value={form.advanceName||''} onChange={e => setForm({...form, advanceName: e.target.value})} className={inputCls}>
+                    <option value="">Select staff member…</option>
+                    {S.get(K.STAFF, []).filter(m => m.status !== 'left').map(m => (
+                      <option key={m.id} value={m.name}>{m.name} — {m.role}</option>
+                    ))}
+                  </select>
+                </Field>
+              )}
+              {form.advanceFor === 'Vendor' && (
+                <Field label="Vendor / Supplier *">
+                  <select value={form.advanceName||''} onChange={e => setForm({...form, advanceName: e.target.value})} className={inputCls}>
+                    <option value="">Select vendor…</option>
+                    {S.get(K.VENDOR, []).map(v => (
+                      <option key={v.id} value={v.name}>{v.name}</option>
+                    ))}
+                  </select>
+                </Field>
+              )}
+              {form.advanceFor === 'Other' && (
+                <Inp label="Name / Description *" value={form.advanceName||''} onChange={e => setForm({...form, advanceName: e.target.value})} placeholder="Enter name or description"/>
+              )}
+              {form.advanceFor && form.advanceName && (
+                <div className="flex items-center gap-2 bg-white border border-amber-300 rounded-xl px-3 py-2 text-xs text-amber-800 font-semibold">
+                  ✅ Advance of Rs. {form.amount||'0'} → <strong>{form.advanceName}</strong> ({form.advanceFor})
+                </div>
+              )}
+            </div>
+          )}
+
           <Inp label="Date *" type="date" value={form.date} onChange={e => setForm({...form, date: e.target.value})}/>
           <Field label="Paid From (Account) *">
             <div className="flex flex-wrap gap-2">
@@ -4758,7 +5063,15 @@ function Expenses() {
         <Modal title="Delete Expense" onClose={() => setDelId(null)}>
           <p className="text-gray-600 mb-5">Delete <strong>{list.find(e=>e.id===delId)?.title}</strong>?</p>
           <div className="flex gap-2">
-            <Btn full variant="red" onClick={() => { persist(list.filter(e=>e.id!==delId)); setDelId(null); }}>Delete</Btn>
+            <Btn full variant="red" onClick={() => {
+              // ── Global Engine: remove linked Cash Book entry ────────────
+              const toDelete = list.find(e => e.id === delId);
+              if (toDelete?.cbEntryId) {
+                S.set(K.CBOOK, S.get(K.CBOOK, []).filter(e => e.id !== toDelete.cbEntryId));
+              }
+              persist(list.filter(e => e.id !== delId));
+              setDelId(null);
+            }}>Delete</Btn>
             <Btn variant="outline" onClick={() => setDelId(null)}>Cancel</Btn>
           </div>
         </Modal>
@@ -4867,17 +5180,11 @@ function FamilyLedger() {
     return map;
   }, [familyPayments, vm, vy]);
 
-  // Books paid per child — all-time (books are one-time, not monthly)
-  const booksPaidMap = useMemo(() => {
-    const map = {};
-    familyPayments.forEach(p => {
-      if (p.booksPaid > 0) map[p.stuId] = (map[p.stuId] || 0) + Number(p.booksPaid);
-    });
-    return map;
-  }, [familyPayments]);
+  // Books paid per child — all-time via global engine (no manual loop)
+  const booksPaidMap = useMemo(() => buildPaidMapsFromCutoff(familyPayments).booksMap, [familyPayments]);
 
   // Per-student: auto discount = classFee − stu.monthlyFee (if monthlyFee < classFee)
-  const getStuAutoDisc = (st) => { const cf = Number(classFees[st.cls]||0); const sr = Number(st.monthlyFee||0); return sr > 0 && sr < cf ? cf - sr : 0; };
+  const getStuAutoDisc = (st) => getStuDisc(st, classFees);
 
   // Per-child status
   const getChildStatus = (stu) => {
@@ -4902,10 +5209,13 @@ function FamilyLedger() {
   const totalDue              = familyStudents.reduce((s, st) => s + Number(classFees[st.cls] || 0), 0);
   const totalPaidMonth        = familyStudents.reduce((s, st) => s + (monthPaidMap[st.id] || 0), 0);
   const totalDiscount         = familyStudents.reduce((s, st) => s + getStuAutoDisc(st), 0);
-  const totalActualMonthlyDue = familyStudents.reduce((s, st) => s + Math.max(0, Number(classFees[st.cls]||0) - getStuAutoDisc(st)), 0);
+  const totalActualMonthlyDue = familyStudents.reduce((s, st) => s + getStuNetMonthlyDue(st, classFees), 0);
   const totalBalance          = Math.max(0, totalActualMonthlyDue - totalPaidMonth);
   const allTimePaid           = familyPayments.reduce((s, p) => s + Number(p.amount || 0), 0);
   const totalOpeningBalance   = familyStudents.reduce((s, st) => s + Number(st.openingBalance || 0), 0);
+  // ── Single Engine outstanding ──
+  const _flPaidMaps = buildPaidMapsFromCutoff(allPayments);
+  const netOutstandingEngine  = parseFloat(familyStudents.reduce((s, st) => s + getStuOutstandingFromCutoff(st, classFees, _flPaidMaps), 0).toFixed(2));
   // Annual Fund totals
   const totalAFDue     = familyStudents.reduce((s, st) => s + Number(st.annualFund || 0), 0);
   const totalAFPaid    = familyStudents.reduce((s, st) => s + (monthAFPaidMap[st.id] || 0), 0);
@@ -4913,7 +5223,7 @@ function FamilyLedger() {
 
   // ── Equal Split Payment ──
   const openSplitPay = () => {
-    setPf({ month: vm, year: vy, totalAmount: String(grandBalance || grandTotalDue), annualFund: '', note: '', paymentMethod: 'Cash' });
+    setPf({ month: vm, year: vy, totalAmount: String(parseFloat((grandBalance || grandTotalDue).toFixed(2))), annualFund: '', note: '', paymentMethod: 'Cash' });
     setSplitMod(true);
   };
 
@@ -5107,10 +5417,29 @@ function FamilyLedger() {
   const totalBooksPaid = familyStudents.reduce((s, st) => s + (booksPaidMap[st.id] || 0), 0);
   const grandTotalDue  = totalDue + totalAFDue + totalBooksDue;
   const grandTotalPaid = totalPaidMonth + totalAFPaid + totalBooksPaid;
-  const netOutstanding = Math.max(0, totalOpeningBalance + totalActualMonthlyDue - allTimePaid);
-  const grandBalance   = netOutstanding;
+  const netOutstanding = netOutstandingEngine;
+  const grandBalance   = netOutstandingEngine;
   const openBookEdit = (stu) => setBookMod({ stu, books: getBooksForStu(stu).map(b => ({...b})) });
-  const saveBooks = () => { persistBooks({ ...bookLists, [bookMod.stu.id]: bookMod.books }); setBookMod(null); };
+  const saveBooks = () => {
+    const oldBooks = bookLists[bookMod.stu.id] || [];
+    const newBooks = bookMod.books;
+    // ── Global Engine: auto-deduct / restore inventory when book list changes ──
+    const invItems = S.get(K.INV, []);
+    let invChanged = false;
+    const updatedInv = invItems.map(item => {
+      const oldB = oldBooks.find(b => (b.name||'').trim().toLowerCase() === (item.name||'').trim().toLowerCase());
+      const newB = newBooks.find(b => (b.name||'').trim().toLowerCase() === (item.name||'').trim().toLowerCase());
+      const oldQty = oldB ? Number(oldB.qty || 0) : 0;
+      const newQty = newB ? Number(newB.qty || 0) : 0;
+      const delta  = newQty - oldQty; // positive → more assigned → deduct stock
+      if (delta === 0) return item;
+      invChanged = true;
+      return { ...item, qty: Math.max(0, Number(item.qty || 0) - delta) }; // negative delta = return to stock
+    });
+    if (invChanged) S.set(K.INV, updatedInv);
+    persistBooks({ ...bookLists, [bookMod.stu.id]: bookMod.books });
+    setBookMod(null);
+  };
   const updateBook = (idx, field, val) => setBookMod({ ...bookMod, books: bookMod.books.map((b, i) => i === idx ? {...b, [field]: field==='name'?val:Number(val)} : b) });
   const addBook = () => setBookMod({ ...bookMod, books: [...bookMod.books, { name:'', qty:1, price:0 }] });
   const removeBook = (idx) => setBookMod({ ...bookMod, books: bookMod.books.filter((_,i) => i !== idx) });
@@ -5121,7 +5450,8 @@ function FamilyLedger() {
     const childRows = familyStudents.map((stu, i) => {
       const due    = Number(classFees[stu.cls]||0);
       const paid   = monthPaidMap[stu.id] || 0;
-      const bal    = due - paid;
+      // ── Global Engine: all-time balance via getStuOutstanding ──────────
+      const bal    = getStuOutstandingFromCutoff(stu, classFees, _flPaidMaps);
       const status = getChildStatus(stu);
       const statusLabel = status==='paid'?'Paid':status==='advance'?'Advance':status==='partial'?'Partial':'Unpaid';
       const statusColor = status==='paid'||status==='advance'?'b-green':status==='partial'?'b-yellow':'b-red';
@@ -5715,7 +6045,7 @@ function FamilyLedger() {
 }
 
 // ── STAFF & SALARY ───────────────────────────────────────────────────────────
-const blankStaff = { name:'', father:'', role:'Teacher', contact:'', address:'', salary:0, joinDate:'' };
+const blankStaff = { name:'', father:'', role:'Teacher', contact:'', address:'', salary:0, joinDate:'', workingDays:26 };
 const ROLES = ['Principal','Teacher','Admin','Peon','Guard','Driver','Cook','Other'];
 
 function Staff() {
@@ -5729,7 +6059,8 @@ function Staff() {
   const [delId, setDelId]   = useState(null);
   const [payMod, setPayMod] = useState(null);
   const [histMod, setHistMod] = useState(null);
-  const [pf, setPf]         = useState({ month: NOW.getMonth(), year: NOW.getFullYear(), amount:'', note:'', paymentMethod:'Cash' });
+  const [staffFilter, setStaffFilter] = useState('active'); // 'active' | 'left' | 'all'
+  const [pf, setPf]         = useState({ month: NOW.getMonth(), year: NOW.getFullYear(), amount:'', note:'', paymentMethod:'Cash', workingDays:26, paidLeaves:0, unpaidLeaves:0 });
   const [vm, setVm]         = useState(NOW.getMonth());
   const [vy, setVy]         = useState(NOW.getFullYear());
   const years = Array.from({ length: 5 }, (_, i) => NOW.getFullYear() - 2 + i);
@@ -5747,6 +6078,12 @@ function Staff() {
   const recordPay = () => {
     const amt = Number(pf.amount);
     if (!pf.amount || amt <= 0) return alert('Enter a valid amount.');
+    // ── Leave deduction pre-calculation ──────────────────────────────────
+    const wDays    = Math.max(1, Number(pf.workingDays || 26));
+    const uLeaves  = Math.max(0, Number(pf.unpaidLeaves || 0));
+    const pLeaves  = Math.max(0, Number(pf.paidLeaves || 0));
+    const perDay   = Math.round(Number(payMod.salary) / wDays);
+    const deduction = Math.round(uLeaves * perDay);
     // Balance check
     const acctInfo = getAcctBalance(pf.paymentMethod || 'Cash');
     if (acctInfo && acctInfo.balance < amt) {
@@ -5760,6 +6097,7 @@ function Staff() {
     }
     const now = new Date().toISOString();
     const isPartial = alreadyPaid + amt < Number(payMod.salary) - 0.01;
+    const leaveNote = uLeaves > 0 ? ` [${uLeaves} unpaid leave(s) − Rs. ${deduction.toLocaleString()}]` : '';
     const pay = {
       id: uid(), staffId: payMod.id,
       month: Number(pf.month), year: Number(pf.year),
@@ -5769,9 +6107,15 @@ function Staff() {
       date: now,
       rcpt: 'SAL-' + Date.now().toString().slice(-6),
       partial: isPartial,
+      // ── Global Engine: leave data stored in payment record ────────────
+      workingDays: wDays, paidLeaves: pLeaves,
+      unpaidLeaves: uLeaves, perDay, deduction,
     };
     persistSpays([...spays, pay]);
-    addCashBookEntry('expense', `Salary — ${payMod.name} (${MONTHS[Number(pf.month)]} ${Number(pf.year)})`, amt, pf.paymentMethod || 'Cash', now, pf.note);
+    // ── Global Engine: Cash Book entry with leave detail ─────────────────
+    addCashBookEntry('expense',
+      `Salary — ${payMod.name} (${MONTHS[Number(pf.month)]} ${Number(pf.year)})${leaveNote}`,
+      amt, pf.paymentMethod || 'Cash', now, pf.note);
     setPayMod(null);
     printSlip(pay, payMod);
   };
@@ -5802,7 +6146,12 @@ function Staff() {
     return { balance: bal, name: acct.name };
   };
 
-  const totalSalaryBudget = staff.reduce((s, m) => s + Number(m.salary), 0);
+  // Filtered list for the table — respects Active / Left / All tab
+  const displayStaff = staff.filter(m =>
+    staffFilter === 'all'  ? true :
+    staffFilter === 'left' ? m.status === 'left' :
+    m.status !== 'left');
+  const totalSalaryBudget = staff.filter(isActiveStaff).reduce((s, m) => s + Number(m.salary), 0);
   const totalPaidMonth    = Object.values(monthPaidTotalMap).reduce((s, v) => s + v, 0);
 
   const printSlip = (pay, member) => {
@@ -5844,6 +6193,18 @@ function Staff() {
         <span class="total-val">Rs. ${Number(pay.amount).toLocaleString()}</span>
       </div>
       ${Number(member.salary) > 0 && Number(pay.amount) < Number(member.salary) ? `<div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;padding:7px 12px;margin:6px 0;font-size:11px;color:#92400e;font-weight:600;text-align:center">⚡ Partial Payment — Full Monthly Salary: Rs. ${Number(member.salary).toLocaleString()}</div>` : ''}
+      ${pay.unpaidLeaves > 0 ? `
+        <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:8px 12px;margin:6px 0;font-size:11px;color:#991b1b">
+          <div style="font-weight:700;margin-bottom:4px">📅 Attendance Summary</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px">
+            <span>Working Days:</span><span style="font-weight:600">${pay.workingDays||26}</span>
+            <span>Per Day Rate:</span><span style="font-weight:600">Rs. ${(pay.perDay||0).toLocaleString()}</span>
+            <span style="color:#15803d">Paid Leaves:</span><span style="font-weight:600;color:#15803d">${pay.paidLeaves||0} (No Deduction)</span>
+            <span style="color:#dc2626">Unpaid Leaves:</span><span style="font-weight:600;color:#dc2626">${pay.unpaidLeaves}</span>
+            <span style="color:#dc2626">Leave Deduction:</span><span style="font-weight:700;color:#dc2626">− Rs. ${(pay.deduction||0).toLocaleString()}</span>
+          </div>
+        </div>` : ''}
+      ${pay.paidLeaves > 0 && !pay.unpaidLeaves ? `<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:7px 12px;margin:6px 0;font-size:11px;color:#15803d;font-weight:600;text-align:center">✅ Paid Leaves: ${pay.paidLeaves} — No Deduction</div>` : ''}
       ${pay.note ? `<p style="font-size:11px;color:#6b7280">Note: ${pay.note}</p>` : ''}
       <hr class="divider"/>
       <div style="display:flex;justify-content:space-between;margin-top:30px;font-size:11px;color:#6b7280">
@@ -5857,14 +6218,16 @@ function Staff() {
   };
 
   const printStaff = () => {
-    const rows = staff.map((m,i)=>{
+    const rows = displayStaff.map((m,i)=>{
       const paidAmt = monthPaidTotalMap[m.id] || 0;
-      return `<tr><td>${i+1}</td><td><b>${m.name}</b></td><td>${m.father||'—'}</td><td><span class="badge b-blue">${m.role}</span></td><td>Rs. ${Number(m.salary).toLocaleString()}</td><td>${m.contact||'—'}</td><td><span class="badge ${paidAmt>0?'b-green':'b-red'}">${paidAmt>0?'Paid Rs.'+paidAmt.toLocaleString():'Unpaid'}</span></td></tr>`;
+      const leftLabel = m.status==='left' ? ` <span class="badge b-red">LEFT${m.leftDate?' '+m.leftDate:''}</span>` : '';
+      return `<tr><td>${i+1}</td><td><b>${m.name}</b>${leftLabel}</td><td>${m.father||'—'}</td><td><span class="badge b-blue">${m.role}</span></td><td>Rs. ${Number(m.salary).toLocaleString()}</td><td>${m.contact||'—'}</td><td><span class="badge ${paidAmt>0?'b-green':'b-red'}">${paidAmt>0?'Paid Rs.'+paidAmt.toLocaleString():'Unpaid'}</span></td></tr>`;
     }).join('');
+    const filterLabel = staffFilter==='left' ? ' — Left Staff' : staffFilter==='all' ? ' — All Staff' : ' — Active Staff';
     printPage(`Staff & Salary — ${MONTHS[vm]} ${vy}`, `
-      <h2>Staff & Salary — ${MONTHS[vm]} ${vy}</h2>
+      <h2>Staff & Salary${filterLabel} — ${MONTHS[vm]} ${vy}</h2>
       <div class="summary">
-        <div class="sum-card"><div class="val">${staff.length}</div><div class="lbl">Total Staff</div></div>
+        <div class="sum-card"><div class="val">${displayStaff.length}</div><div class="lbl">${staffFilter==='left'?'Left Staff':staffFilter==='all'?'Total Staff':'Active Staff'}</div></div>
         <div class="sum-card"><div class="val">Rs. ${totalSalaryBudget.toLocaleString()}</div><div class="lbl">Salary Budget</div></div>
         <div class="sum-card"><div class="val">Rs. ${totalPaidMonth.toLocaleString()}</div><div class="lbl">Paid This Month</div></div>
         <div class="sum-card"><div class="val">Rs. ${(totalSalaryBudget-totalPaidMonth).toLocaleString()}</div><div class="lbl">Pending</div></div>
@@ -5885,6 +6248,27 @@ function Staff() {
         </div>
       </div>
 
+      {/* ── Active / Left / All Filter Tabs ── */}
+      {(() => {
+        const activeCount = staff.filter(m => m.status !== 'left').length;
+        const leftCount   = staff.filter(m => m.status === 'left').length;
+        const tabs = [
+          { id:'active', label:'✅ Active',          count: activeCount },
+          { id:'left',   label:'🔴 Left / Terminated', count: leftCount   },
+          { id:'all',    label:'📋 All',               count: staff.length },
+        ];
+        return (
+          <div className="flex gap-1 mb-4 bg-gray-100 p-1 rounded-xl w-fit flex-wrap">
+            {tabs.map(t => (
+              <button key={t.id} onClick={() => setStaffFilter(t.id)}
+                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${staffFilter===t.id ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                {t.label} ({t.count})
+              </button>
+            ))}
+          </div>
+        );
+      })()}
+
       {/* Month selector + summary */}
       <div className="flex flex-wrap gap-2 mb-4">
         <select value={vm} onChange={e => setVm(Number(e.target.value))} className={inputCls + ' w-auto'}>
@@ -5897,8 +6281,8 @@ function Staff() {
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
         <Card className="p-4 bg-blue-50 border-blue-200">
-          <p className="text-xs text-blue-500 font-semibold uppercase mb-1">Total Staff</p>
-          <p className="text-2xl font-bold text-blue-700">{staff.length}</p>
+          <p className="text-xs text-blue-500 font-semibold uppercase mb-1">{staffFilter==='left'?'Left Staff':staffFilter==='all'?'Total Staff':'Active Staff'}</p>
+          <p className="text-2xl font-bold text-blue-700">{displayStaff.length}</p>
         </Card>
         <Card className="p-4 bg-amber-50 border-amber-200">
           <p className="text-xs text-amber-600 font-semibold uppercase mb-1">Salary Budget</p>
@@ -5916,8 +6300,8 @@ function Staff() {
         </Card>
       </div>
 
-      {staff.length === 0
-        ? <Empty icon="👩‍🏫" text="No staff added yet. Click + Add Staff to begin." />
+      {displayStaff.length === 0
+        ? <Empty icon="👩‍🏫" text={staff.length === 0 ? 'No staff added yet. Click + Add Staff to begin.' : `No ${staffFilter === 'left' ? 'left/terminated' : 'active'} staff found.`} />
         : <Card className="overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -5933,7 +6317,7 @@ function Staff() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {staff.map((m, idx) => {
+                  {displayStaff.map((m, idx) => {
                     const paidAmt  = monthPaidTotalMap[m.id] || 0;
                     const salary   = Number(m.salary);
                     const remaining = Math.max(0, salary - paidAmt);
@@ -5945,8 +6329,12 @@ function Staff() {
                       <tr key={m.id} className="hover:bg-slate-50">
                         <td className="px-4 py-3 text-xs font-bold text-gray-400">{String(idx+1).padStart(2,'0')}</td>
                         <td className="px-4 py-3">
-                          <div className="font-semibold text-gray-800">{m.name}</div>
+                          <div className="flex items-center gap-1.5">
+                            <span className={`font-semibold ${m.status==='left'?'text-gray-400 line-through':'text-gray-800'}`}>{m.name}</span>
+                            {m.status==='left' && <span className="text-xs bg-red-100 text-red-600 font-bold px-1.5 py-0.5 rounded-full">LEFT</span>}
+                          </div>
                           {m.contact && <div className="text-xs text-gray-400">{m.contact}</div>}
+                          {m.status==='left' && m.leftDate && <div className="text-xs text-red-400">Left: {m.leftDate}</div>}
                         </td>
                         <td className="px-4 py-3 text-gray-500 hidden sm:table-cell">{m.father || '—'}</td>
                         <td className="px-4 py-3"><Badge color="blue">{m.role}</Badge></td>
@@ -5963,7 +6351,7 @@ function Staff() {
                           <div className="flex flex-wrap gap-1 justify-end">
                             {isPaid
                               ? <Btn sm variant="outline" onClick={() => lastPay && printSlip(lastPay, m)}>🖨️ Slip</Btn>
-                              : canAdd && <Btn sm variant="green" onClick={() => { setPayMod(m); setPf({ month: vm, year: vy, amount: String(remaining || salary), note:'', paymentMethod:'Cash' }); }}>
+                              : canAdd && <Btn sm variant="green" onClick={() => { setPayMod(m); setPf({ month: vm, year: vy, amount: String(remaining || salary), note:'', paymentMethod:'Cash', workingDays: Number(m.workingDays||26), paidLeaves:0, unpaidLeaves:0 }); }}>
                                   {isPartial ? `Pay Rs. ${remaining.toLocaleString()} More` : 'Pay Salary'}
                                 </Btn>}
                             <Btn sm variant="ghost" onClick={() => setHistMod(m)}>History</Btn>
@@ -5990,6 +6378,30 @@ function Staff() {
           <Inp label="Contact Number" value={form.contact||''} onChange={e => setForm({...form, contact: e.target.value})} placeholder="e.g. 0321-1234567"/>
           <Inp label="Address" value={form.address||''} onChange={e => setForm({...form, address: e.target.value})} placeholder="Home address"/>
           <Inp label="Join Date" type="date" value={form.joinDate||''} onChange={e => setForm({...form, joinDate: e.target.value})}/>
+          <div className="mb-3">
+            <label className="block text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wide">Working Days / Month</label>
+            <input type="number" min="1" max="31" value={form.workingDays||26}
+              onChange={e => setForm({...form, workingDays: Math.max(1, Number(e.target.value)||26)})}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"/>
+            <p className="text-xs text-gray-400 mt-1">Used for per-day rate & unpaid leave deduction. Default: 26</p>
+          </div>
+          {/* Staff Status */}
+          <div className="mb-3">
+            <label className="block text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wide">Status</label>
+            <select value={form.status||'active'} onChange={e=>setForm({...form,status:e.target.value})}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+              <option value="active">✅ Active</option>
+              <option value="left">🔴 Left / Terminated</option>
+            </select>
+          </div>
+          {(form.status==='left') && (
+            <Inp label="Left Date" type="date" value={form.leftDate||''} onChange={e=>setForm({...form,leftDate:e.target.value})}/>
+          )}
+          {form.status==='left' && (
+            <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-2 mb-2 text-xs text-red-700">
+              🔴 This staff member will be excluded from active payroll. All historical salary records are preserved.
+            </div>
+          )}
           <div className="flex gap-2 mt-5">
             <Btn full onClick={save}>{form.id ? 'Update' : 'Save Staff'}</Btn>
             <Btn variant="outline" onClick={() => setForm(null)}>Cancel</Btn>
@@ -6042,6 +6454,71 @@ function Staff() {
               <Sel label="Year" value={pf.year} onChange={e => setPf({...pf, year: Number(e.target.value)})} options={years.map(y=>({v:y,l:String(y)}))}/>
             </div>
           </div>
+          {/* ── Attendance & Leave Calculation ── */}
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 mb-3">
+            <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">📅 Attendance & Leave</p>
+            <div className="grid grid-cols-3 gap-2 mb-3">
+              <div>
+                <label className="text-xs text-gray-500 font-semibold block mb-1">Working Days</label>
+                <input type="number" min="1" max="31" value={pf.workingDays||26}
+                  onChange={e => {
+                    const wDays   = Math.max(1, Number(e.target.value)||26);
+                    const perDay  = Number(payMod.salary) / wDays;
+                    const ded     = Math.round(Number(pf.unpaidLeaves||0) * perDay);
+                    setPf({...pf, workingDays: wDays, amount: String(Math.max(0, Number(payMod.salary) - ded))});
+                  }}
+                  className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-400"/>
+              </div>
+              <div>
+                <label className="text-xs text-emerald-600 font-semibold block mb-1">✅ Paid Leaves</label>
+                <input type="number" min="0" value={pf.paidLeaves||0}
+                  onChange={e => setPf({...pf, paidLeaves: Math.max(0, Number(e.target.value)||0)})}
+                  className="w-full border border-emerald-200 rounded-lg px-2 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-emerald-400"/>
+              </div>
+              <div>
+                <label className="text-xs text-red-500 font-semibold block mb-1">🔴 Unpaid Leaves</label>
+                <input type="number" min="0" value={pf.unpaidLeaves||0}
+                  onChange={e => {
+                    const uLeaves = Math.max(0, Number(e.target.value)||0);
+                    const wDays   = Math.max(1, Number(pf.workingDays||26));
+                    const perDay  = Number(payMod.salary) / wDays;
+                    const ded     = Math.round(uLeaves * perDay);
+                    setPf({...pf, unpaidLeaves: uLeaves, amount: String(Math.max(0, Number(payMod.salary) - ded))});
+                  }}
+                  className="w-full border border-red-200 rounded-lg px-2 py-1.5 text-sm text-center text-red-600 font-bold focus:outline-none focus:ring-2 focus:ring-red-400"/>
+              </div>
+            </div>
+            {/* Per-day live breakdown */}
+            {(() => {
+              const sal     = Number(payMod.salary);
+              const wDays   = Math.max(1, Number(pf.workingDays||26));
+              const uLeaves = Number(pf.unpaidLeaves||0);
+              const pL      = Number(pf.paidLeaves||0);
+              const perDay  = Math.round(sal / wDays);
+              const ded     = Math.round(uLeaves * perDay);
+              if (sal <= 0) return null;
+              return (
+                <div className="text-xs space-y-1 border-t border-slate-200 pt-2">
+                  <div className="flex justify-between text-gray-500">
+                    <span>Per Day Rate ({sal.toLocaleString()} ÷ {wDays} days):</span>
+                    <span className="font-bold text-blue-600">Rs. {perDay.toLocaleString()}</span>
+                  </div>
+                  {pL > 0 && <div className="flex justify-between text-emerald-600"><span>Paid Leaves ({pL}):</span><span className="font-bold">No Deduction ✓</span></div>}
+                  {uLeaves > 0 && (
+                    <div className="flex justify-between text-red-500">
+                      <span>Unpaid Leave Deduction ({uLeaves} × Rs. {perDay.toLocaleString()}):</span>
+                      <span className="font-bold">− Rs. {ded.toLocaleString()}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between font-bold border-t border-slate-200 pt-1">
+                    <span className="text-gray-700">Net Payable:</span>
+                    <span className={`text-base ${ded>0?'text-red-600':'text-emerald-700'}`}>Rs. {Math.max(0,sal-ded).toLocaleString()}</span>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+
           <Inp label="Amount (Rs.) *" type="number" min="1" value={pf.amount} onChange={e => setPf({...pf, amount: e.target.value})} placeholder="Amount paid"/>
           <div className="mb-3">
             <label className="block text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wide">Payment Method *</label>
@@ -6348,8 +6825,8 @@ function UserAdmin() {
                 {[
                   {id:'dashboard',     icon:'🏠', label:'Dashboard'},
                   {id:'students',      icon:'👨‍🎓', label:'Students'},
-                  {id:'feecollect',    icon:'📒', label:'Student Ledger'},
-                  {id:'fees',          icon:'💰', label:'Fee Collection'},
+                  {id:'feecollect',    icon:'💰', label:'Fee Collection'},
+                  {id:'fees',          icon:'📒', label:'Student Ledger'},
                   {id:'inventory',     icon:'📦', label:'Inventory'},
                   {id:'expenses',      icon:'🧾', label:'Expenses'},
                   {id:'family',        icon:'👨‍👩‍👧‍👦', label:'Family Ledger'},
@@ -7098,17 +7575,33 @@ function VendorBooks() {
 // ── EXAM MODULE (Date Sheet + Result Cards) ──────────────────────────────────
 function Exams() {
   const students  = S.get(K.STU, []);
-  const [tab, setTab]           = useState('datesheet');
-  const [dateSheets, setDateSheets] = useState(() => S.get(K.DS, {}));
-  const [results, setResults]   = useState(() => S.get(K.RS, {}));
+  // ── Tab state: saved to sessionStorage so Firebase sync (syncTick remount) doesn't reset it ──
+  const [tab, setTab] = useState(() => sessionStorage.getItem('_examTab') || 'datesheet');
+  const setTabSafe = (t) => { sessionStorage.setItem('_examTab', t); setTab(t); };
 
-  // ── Paper Tab State ──
-  const [paperSettings, setPaperSettings] = useState({ cls: CLASSES[0], subject:'English', term:'Term 1', year: NOW.getFullYear(), date:'', totalMarks:100, time:'2 Hours', instructions:'Attempt all questions.' });
-  const [paperQs, setPaperQs] = useState([]);
+  const [dateSheets, setDateSheets] = useState(() => S.get(K.DS, {}));
+  const [results, setResults]       = useState(() => S.get(K.RS, {}));
+  const [subjectTotals, setSubjectTotals] = useState(() => S.get(K.ST, {}));
+  const [customSubjects, setCustomSubjects] = useState(() => S.get(K.SL, {}));
+  const [defaultTotal, setDefaultTotal]     = useState('');
+  const [showSubjEditor, setShowSubjEditor] = useState(false);
+  const [editorRows, setEditorRows]         = useState([]);
+
+  // ── Paper Tab State: sessionStorage-backed so work survives Firebase sync remounts ──
+  const [paperSettings, setPaperSettings] = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem('_examPaperSettings') || 'null') || { cls: CLASSES[0], subject:'English', term:'Term 1', year: NOW.getFullYear(), date:'', totalMarks:100, time:'2 Hours', instructions:'Attempt all questions.' }; } catch { return { cls: CLASSES[0], subject:'English', term:'Term 1', year: NOW.getFullYear(), date:'', totalMarks:100, time:'2 Hours', instructions:'Attempt all questions.' }; }
+  });
+  const setPaperSettingsSafe = (v) => { sessionStorage.setItem('_examPaperSettings', JSON.stringify(v)); setPaperSettings(v); };
+
+  const [paperQs, setPaperQs] = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem('_examPaperQs') || '[]'); } catch { return []; }
+  });
+  const savePaperQs = (qs) => { sessionStorage.setItem('_examPaperQs', JSON.stringify(qs)); setPaperQs(qs); };
+
   const blankQ = () => ({ id: uid(), section:'', type:'english', text:'', marks:5, shapes:[], narrowCount:'', writtenCount:'', urduCount:'', mathRows:'', mathCols:'', shortCount:'', shapesLineCount:'', shapeSize:80, shapeNameLine:false, shapeAlign:'left', tableEnabled:false, tableColumns:[{header:''}], tableRows:1, tableData:{}, tableDir:'ltr', tableRowHeight:'0.45in' });
-  const addQ   = () => setPaperQs(prev => [...prev, blankQ()]);
-  const removeQ = (id) => setPaperQs(prev => prev.filter(q => q.id !== id));
-  const updateQ = (id, field, val) => setPaperQs(prev => prev.map(q => q.id===id ? {...q, [field]: val} : q));
+  const addQ    = () => savePaperQs([...paperQs, blankQ()]);
+  const removeQ = (id) => savePaperQs(paperQs.filter(q => q.id !== id));
+  const updateQ = (id, field, val) => savePaperQs(paperQs.map(q => q.id===id ? {...q, [field]: val} : q));
 
   const SHAPE_LIST = ['Circle','Rectangle','Square','Triangle','Sun','Moon','Star','Ball','Apple','Bus','Computer'];
 
@@ -7284,9 +7777,52 @@ function Exams() {
   const dsKey  = `${selTerm}_${selYear}`;
   const dsRows = dateSheets[dsKey] || [];
 
-  // subjects for selected class
-  const getSubjects = (cls) => ['Play Group Red','Play Group Blue','Nursery','KG'].includes(cls)
+  // subjects for selected class — custom list takes priority
+  const getDefaultSubjects = (cls) => ['Play Group Red','Play Group Blue','Nursery','KG'].includes(cls)
     ? SUBJECTS_PG_KG : SUBJECTS_1_10;
+  const getSubjects = (cls) => customSubjects[cls] && customSubjects[cls].length > 0
+    ? customSubjects[cls] : getDefaultSubjects(cls);
+
+  // ── Per-subject total marks helpers
+  const getSubjTotal = (subj) => Number(subjectTotals[subj]) || TOTAL_MARKS;
+  const setSubjTotal = (subj, val) => {
+    const v = val === '' ? '' : Math.max(1, Number(val));
+    const updated = { ...subjectTotals, [subj]: v };
+    S.set(K.ST, updated); setSubjectTotals(updated);
+  };
+  const applyToAll = () => {
+    const v = Number(defaultTotal);
+    if (!v || v < 1) return;
+    const updated = { ...subjectTotals };
+    getSubjects(selCls).forEach(s => { updated[s] = v; });
+    S.set(K.ST, updated); setSubjectTotals(updated);
+  };
+  const resetAllTo100 = () => {
+    const updated = { ...subjectTotals };
+    getSubjects(selCls).forEach(s => { updated[s] = 100; });
+    S.set(K.ST, updated); setSubjectTotals(updated);
+  };
+  const openSubjEditor = () => {
+    setEditorRows(getSubjects(selCls).map(s => ({ name:s, total:String(getSubjTotal(s)) })));
+    setShowSubjEditor(true);
+  };
+  const saveSubjEditor = () => {
+    const valid = editorRows.filter(r => r.name.trim());
+    if (!valid.length) return alert('At least one subject is required.');
+    const newCL = { ...customSubjects, [selCls]: valid.map(r => r.name.trim()) };
+    S.set(K.SL, newCL); setCustomSubjects(newCL);
+    const newST = { ...subjectTotals };
+    valid.forEach(r => { newST[r.name.trim()] = Number(r.total) || TOTAL_MARKS; });
+    S.set(K.ST, newST); setSubjectTotals(newST);
+    setShowSubjEditor(false);
+  };
+  const resetSubjEditor = () => {
+    if (!window.confirm('Reset subjects for this class to system defaults?')) return;
+    const newCL = { ...customSubjects };
+    delete newCL[selCls];
+    S.set(K.SL, newCL); setCustomSubjects(newCL);
+    setShowSubjEditor(false);
+  };
 
   // ── Date Sheet helpers
   const persistDS = d => { S.set(K.DS, d); setDateSheets(d); };
@@ -7342,152 +7878,179 @@ function Exams() {
 
   const updateMark = (stu, subj, val) => {
     const key = rsKey(stu);
-    const prev = results[key] || {};
-    const updated = { ...results, [key]: { ...prev, [subj]: val === '' ? '' : Math.min(Number(val), TOTAL_MARKS) } };
-    S.set(K.RS, updated); setResults(updated);
+    const max = getSubjTotal(subj);
+    const newVal = val === '' ? '' : Math.min(Number(val), max);
+    setResults(prev => {
+      const updated = { ...prev, [key]: { ...(prev[key] || {}), [subj]: newVal } };
+      S.set(K.RS, updated);
+      return updated;
+    });
   };
 
-  const calcTotal  = (marks) => Object.values(marks).reduce((s,v)=>s+(v===''?0:Number(v)),0);
-  const calcPct    = (marks, subjs) => subjs.length ? Math.round(calcTotal(marks) / (subjs.length * TOTAL_MARKS) * 100) : 0;
+  // Only count marks for subjects in the current class list (ignore orphan keys from renamed/removed subjects)
+  const calcTotal    = (marks, subjs) => (subjs || Object.keys(marks)).reduce((s,sub)=>{const v=marks[sub];return s+(v===''||v===undefined?0:Number(v));},0);
+  const calcMaxTotal = (subjs) => subjs.reduce((s,sub)=>s+getSubjTotal(sub),0);
+  const calcPct      = (marks, subjs) => subjs.length ? Math.round(calcTotal(marks, subjs) / calcMaxTotal(subjs) * 100) : 0;
   const getGrade   = (pct) => pct>=90?'A+':pct>=80?'A':pct>=70?'B+':pct>=60?'B':pct>=50?'C':pct>=40?'D':'F';
   const passOrFail = (pct) => pct >= 40 ? 'PASS' : 'FAIL';
 
   const classStu = students.filter(s => s.cls === selCls);
 
-  const printResultCard = (stu) => {
-    const subjs = getSubjects(stu.cls);
-    const marks = getMarks(stu);
-    const total = calcTotal(marks);
-    const pct   = calcPct(marks, subjs);
-    const grade = getGrade(pct);
-    const pf    = passOrFail(pct);
-    const subjRows = subjs.map(s => {
-      const m = marks[s] !== undefined && marks[s] !== '' ? Number(marks[s]) : '—';
-      const ob = m === '—' ? '—' : m;
-      const grd = m === '—' ? '—' : getGrade(Math.round(Number(m)/TOTAL_MARKS*100));
-      return `<tr><td>${s}</td><td style="text-align:center">${TOTAL_MARKS}</td><td style="text-align:center;font-weight:700">${ob}</td><td style="text-align:center">${grd}</td></tr>`;
-    }).join('');
+  // ── SHARED PRINT CSS — identical for single and bulk ──────────────────────────
+  const PRINT_CSS = `
+    *{box-sizing:border-box}
+    body{font-family:'Segoe UI',Arial,sans-serif;padding:28px;color:#1a1a1a;font-size:12px;max-width:700px;margin:auto}
+    .student-card-container{max-width:700px;margin:0 auto}
+    .hdr{text-align:center;border-bottom:3px solid #c0392b;padding-bottom:10px;margin-bottom:14px}
+    .hdr img{height:70px;object-fit:contain}
+    .hdr-title{font-size:13px;font-weight:800;color:#c0392b;margin-top:6px}
+    .info-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin:12px 0;background:#f8fafc;padding:10px 12px;border-radius:8px;border:1px solid #e2e8f0}
+    .info-item .lbl{font-size:9px;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px}
+    .info-item .val{font-size:12px;font-weight:800;color:#1a1a1a}
+    .info-item.pos .val{font-size:20px;font-weight:900;color:#c0392b;line-height:1.1}
+    .info-item.pos .lbl{color:#c0392b;font-weight:700}
+    table{width:100%;border-collapse:collapse;margin:8px 0}
+    th{background:#1e3a8a;color:#fff;padding:7px 10px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.3px}
+    td{padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:11px}
+    tr:nth-child(even) td{background:#f8fafc}
+    tfoot td{background:#dbeafe;font-weight:700;color:#1e3a8a}
+    .result-box{display:flex;gap:8px;margin:12px 0;flex-wrap:wrap}
+    .rcard{border-radius:10px;padding:10px 16px;text-align:center;flex:1;min-width:80px}
+    .rcard .rv{font-size:22px;font-weight:900}
+    .rcard .rl{font-size:9px;text-transform:uppercase;opacity:.75;margin-top:3px;letter-spacing:.5px}
+    .pass{background:#dcfce7;color:#15803d}.fail{background:#fee2e2;color:#dc2626}
+    .blue{background:#dbeafe;color:#1d4ed8}.purple{background:#ede9fe;color:#6d28d9}
+    .orange{background:#fff7ed;color:#c2410c}
+    h3{font-size:11px;color:#1e3a8a;margin:14px 0 5px;text-transform:uppercase;letter-spacing:.8px;font-weight:800}
+    .sig{display:flex;justify-content:space-between;margin-top:32px;font-size:11px;color:#6b7280;border-top:1px dashed #e5e7eb;padding-top:14px}
+    .dev-footer{text-align:center;margin-top:12px;padding-top:8px;border-top:1px solid #e5e7eb;font-size:8px;color:#9ca3af;letter-spacing:.3px}
+    @media print{
+      body{padding:10px}
+      button{display:none!important}
+      .student-card-container{page-break-after:always;break-after:page}
+      .student-card-container:last-child{page-break-after:avoid;break-after:avoid}
+    }
+  `;
 
-    // all 3 terms totals for combined view
+  // ── SINGLE CARD BUILDER — used by BOTH single and bulk print ──────────────────
+  const buildCardHTML = (stu, position) => {
+    const subjs    = getSubjects(stu.cls);
+    const marks    = getMarks(stu);
+    const total    = calcTotal(marks, subjs);
+    const maxTot   = calcMaxTotal(subjs);
+    const pct      = calcPct(marks, subjs);
+    const grade    = getGrade(pct);
+    const pf       = passOrFail(pct);
+    const subjRows = subjs.map(s => {
+      const m   = marks[s] !== undefined && marks[s] !== '' ? Number(marks[s]) : '—';
+      const st  = getSubjTotal(s);
+      const grd = m === '—' ? '—' : getGrade(Math.round(Number(m)/st*100));
+      return `<tr><td>${s}</td><td style="text-align:center">${st}</td><td style="text-align:center;font-weight:700">${m}</td><td style="text-align:center">${grd}</td></tr>`;
+    }).join('');
+    // Helper: true if at least one mark was actually entered (not empty)
+    const hasData = (marksObj) => Object.values(marksObj).some(v => v !== '' && v !== undefined && v !== null);
+
     const termRows = TERMS.map(t => {
       const tk = `${stu.id}_${t}_${selYear}`;
       const tm = results[tk] || {};
-      const tt = calcTotal(tm);
-      const tp = calcPct(tm, subjs);
-      return `<tr><td>${t}</td><td style="text-align:center">${subjs.length * TOTAL_MARKS}</td><td style="text-align:center;font-weight:700">${tt}</td><td style="text-align:center">${tp}%</td><td style="text-align:center">${getGrade(tp)}</td><td style="text-align:center;font-weight:700;color:${passOrFail(tp)==='PASS'?'#15803d':'#dc2626'}">${passOrFail(tp)}</td></tr>`;
-    }).join('');
 
-    const win = window.open('','_blank','width=700,height=780');
+      // ── Term 3 row = cumulative T1 + T2 (annual combined result) ──────────
+      if (t === 'Term 3') {
+        const tm1 = results[`${stu.id}_Term 1_${selYear}`] || {};
+        const tm2 = results[`${stu.id}_Term 2_${selYear}`] || {};
+        if (!hasData(tm1) && !hasData(tm2)) {
+          return `<tr><td><b>Annual (T1+T2)</b></td><td style="text-align:center;color:#9ca3af">—</td><td style="text-align:center;color:#9ca3af">—</td><td style="text-align:center;color:#9ca3af">—</td><td style="text-align:center;color:#9ca3af">—</td><td style="text-align:center;color:#9ca3af;font-style:italic">Not Yet</td></tr>`;
+        }
+        const combObt = calcTotal(tm1, subjs) + calcTotal(tm2, subjs);
+        const combMax = maxTot * 2;
+        const combPct = combMax > 0 ? Math.round(combObt / combMax * 100) : 0;
+        return `<tr style="background:#f0fdf4"><td><b>Annual (T1+T2)</b></td><td style="text-align:center"><b>${combMax}</b></td><td style="text-align:center;font-weight:700">${combObt}</td><td style="text-align:center">${combPct}%</td><td style="text-align:center">${getGrade(combPct)}</td><td style="text-align:center;font-weight:700;color:${passOrFail(combPct)==='PASS'?'#15803d':'#dc2626'}">${passOrFail(combPct)}</td></tr>`;
+      }
+
+      // ── Term 1 / Term 2: only show if marks have been entered ─────────────
+      if (!hasData(tm)) {
+        return `<tr><td>${t}</td><td style="text-align:center">${maxTot}</td><td style="text-align:center;color:#9ca3af">—</td><td style="text-align:center;color:#9ca3af">—</td><td style="text-align:center;color:#9ca3af">—</td><td style="text-align:center;color:#9ca3af;font-style:italic">Not Yet</td></tr>`;
+      }
+
+      const tt  = calcTotal(tm, subjs);
+      const tp  = calcPct(tm, subjs);
+      return `<tr><td>${t}</td><td style="text-align:center">${maxTot}</td><td style="text-align:center;font-weight:700">${tt}</td><td style="text-align:center">${tp}%</td><td style="text-align:center">${getGrade(tp)}</td><td style="text-align:center;font-weight:700;color:${passOrFail(tp)==='PASS'?'#15803d':'#dc2626'}">${passOrFail(tp)}</td></tr>`;
+    }).join('');
+    const posLabel = position ? `${position}${position===1?'st':position===2?'nd':position===3?'rd':'th'}` : '—';
+    return `
+    <div class="student-card-container">
+      <div class="hdr">
+        <img src="${LOGO_SRC}" alt="DISS" onerror="this.style.display='none'"/>
+        <div class="hdr-title">RESULT CARD — ${selTerm} ${selYear}</div>
+      </div>
+      <div class="info-grid">
+        <div class="info-item">
+          <div class="lbl">Student Name</div><div class="val">${stu.name}</div>
+          <div class="lbl" style="margin-top:6px">Class</div><div class="val">${stu.cls}</div>
+        </div>
+        <div class="info-item">
+          <div class="lbl">Father's Name</div><div class="val">${stu.father||'—'}</div>
+          <div class="lbl" style="margin-top:6px">Roll Number</div><div class="val">${stu.roll}</div>
+        </div>
+        <div class="info-item pos" style="text-align:center;border-left:2px solid #e2e8f0;padding-left:8px">
+          <div class="lbl">Class Position</div>
+          <div class="val">${posLabel}</div>
+          <div style="font-size:9px;color:#6b7280;margin-top:2px">in class</div>
+        </div>
+      </div>
+      <h3>Subject-wise Marks — ${selTerm}</h3>
+      <table>
+        <thead><tr><th>Subject</th><th style="text-align:center">Total</th><th style="text-align:center">Obtained</th><th style="text-align:center">Grade</th></tr></thead>
+        <tbody>${subjRows}</tbody>
+        <tfoot><tr><td><b>Grand Total</b></td><td style="text-align:center"><b>${maxTot}</b></td><td style="text-align:center"><b>${total}</b></td><td style="text-align:center"><b>${grade}</b></td></tr></tfoot>
+      </table>
+      <div class="result-box">
+        <div class="rcard blue"><div class="rv">${total}/${maxTot}</div><div class="rl">Marks</div></div>
+        <div class="rcard purple"><div class="rv">${pct}%</div><div class="rl">Percentage</div></div>
+        <div class="rcard orange"><div class="rv">${posLabel}</div><div class="rl">Position</div></div>
+        <div class="rcard purple"><div class="rv">${grade}</div><div class="rl">Grade</div></div>
+        <div class="rcard ${pf==='PASS'?'pass':'fail'}"><div class="rv">${pf}</div><div class="rl">Result</div></div>
+      </div>
+      <h3>Annual Performance — ${selYear}</h3>
+      <table>
+        <thead><tr><th>Term</th><th style="text-align:center">Total Marks</th><th style="text-align:center">Obtained</th><th style="text-align:center">%</th><th style="text-align:center">Grade</th><th style="text-align:center">Result</th></tr></thead>
+        <tbody>${termRows}</tbody>
+      </table>
+      <div class="sig">
+        <span>Class Teacher: _______________</span>
+        <span>Principal: _______________</span>
+        <span>Parent Signature: _______________</span>
+      </div>
+      <div class="dev-footer">© 2026 DISS — All Rights Reserved &nbsp;|&nbsp; Powered by Tataheer Business Group &nbsp;|&nbsp; +923218555566</div>
+    </div>`;
+  };
+
+  // ── CLASS POSITION MAP — rank students by percentage descending ───────────────
+  const getPositionMap = (stuList) => {
+    const sorted = [...stuList].sort((a, b) => {
+      const subjs = getSubjects(a.cls);
+      return calcPct(getMarks(b), subjs) - calcPct(getMarks(a), subjs);
+    });
+    const map = {};
+    sorted.forEach((s, i) => { map[s.id] = i + 1; });
+    return map;
+  };
+
+  const printResultCard = (stu) => {
+    const posMap  = getPositionMap(classStu);
+    const cardHTML = buildCardHTML(stu, posMap[stu.id]);
+    const win = window.open('','_blank','width=720,height=800');
     if (!win) { alert('Popup blocked! Please allow popups for this site to print.'); return; }
-    win.document.write(`<!DOCTYPE html><html><head><title>Result Card</title>
-    <style>
-      *{box-sizing:border-box}body{font-family:'Segoe UI',Arial,sans-serif;padding:28px;color:#1a1a1a;font-size:12px;max-width:680px;margin:auto}
-      .hdr{text-align:center;border-bottom:2px solid #c0392b;padding-bottom:10px;margin-bottom:14px}
-      .hdr img{height:65px;object-fit:contain}
-      h1{margin:4px 0 0;font-size:18px;color:#1e3a8a;font-weight:800}
-      .sub{font-size:11px;color:#6b7280;margin:3px 0 0}
-      .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:12px 0;background:#f8fafc;padding:10px;border-radius:8px}
-      .info-item .lbl{font-size:10px;color:#6b7280;text-transform:uppercase;margin-bottom:2px}
-      .info-item .val{font-size:12px;font-weight:700}
-      table{width:100%;border-collapse:collapse;margin:10px 0}
-      th{background:#1e3a8a;color:#fff;padding:7px 10px;text-align:left;font-size:10px;text-transform:uppercase}
-      td{padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:11px}
-      tr:nth-child(even) td{background:#f8fafc}
-      tfoot td{background:#e0f2fe;font-weight:700}
-      .result-box{display:flex;gap:10px;margin:12px 0;flex-wrap:wrap}
-      .rcard{border-radius:10px;padding:10px 16px;text-align:center;flex:1;min-width:80px}
-      .rcard .rv{font-size:22px;font-weight:800}
-      .rcard .rl{font-size:10px;text-transform:uppercase;opacity:.8;margin-top:2px}
-      .pass{background:#dcfce7;color:#15803d}.fail{background:#fee2e2;color:#dc2626}
-      .blue{background:#dbeafe;color:#1d4ed8}.purple{background:#ede9fe;color:#6d28d9}
-      .sig{display:flex;justify-content:space-between;margin-top:36px;font-size:11px;color:#6b7280;border-top:1px dashed #e5e7eb;padding-top:14px}
-      h3{font-size:12px;color:#1e3a8a;margin:14px 0 6px;text-transform:uppercase;letter-spacing:.5px}
-      .dev-footer{text-align:center;margin-top:14px;padding-top:8px;border-top:1px solid #e5e7eb;font-size:8px;color:#9ca3af;letter-spacing:.3px}
-      @media print{body{padding:12px}button{display:none!important}}
-    </style></head><body>
-    <div class="hdr">
-      <img src="${LOGO_SRC}" alt="DISS" onerror="this.style.display='none'"/>
-      <p class="sub" style="font-weight:700;color:#c0392b;font-size:13px;margin-top:6px">RESULT CARD — ${selTerm} ${selYear}</p>
-    </div>
-    <div class="info-grid">
-      <div class="info-item"><div class="lbl">Student Name</div><div class="val">${stu.name}</div></div>
-      <div class="info-item"><div class="lbl">Father's Name</div><div class="val">${stu.father||'—'}</div></div>
-      <div class="info-item"><div class="lbl">Class</div><div class="val">${stu.cls}</div></div>
-      <div class="info-item"><div class="lbl">Roll Number</div><div class="val">${stu.roll}</div></div>
-    </div>
-    <h3>Subject-wise Marks — ${selTerm}</h3>
-    <table>
-      <thead><tr><th>Subject</th><th style="text-align:center">Total</th><th style="text-align:center">Obtained</th><th style="text-align:center">Grade</th></tr></thead>
-      <tbody>${subjRows}</tbody>
-      <tfoot><tr><td><b>Total</b></td><td style="text-align:center"><b>${subjs.length * TOTAL_MARKS}</b></td><td style="text-align:center"><b>${total}</b></td><td style="text-align:center"><b>${grade}</b></td></tr></tfoot>
-    </table>
-    <div class="result-box">
-      <div class="rcard blue"><div class="rv">${total}/${subjs.length*TOTAL_MARKS}</div><div class="rl">Marks</div></div>
-      <div class="rcard purple"><div class="rv">${pct}%</div><div class="rl">Percentage</div></div>
-      <div class="rcard purple"><div class="rv">${grade}</div><div class="rl">Grade</div></div>
-      <div class="rcard ${pf==='PASS'?'pass':'fail'}"><div class="rv">${pf}</div><div class="rl">Result</div></div>
-    </div>
-    <h3>Annual Performance — ${selYear}</h3>
-    <table>
-      <thead><tr><th>Term</th><th style="text-align:center">Total Marks</th><th style="text-align:center">Obtained</th><th style="text-align:center">%</th><th style="text-align:center">Grade</th><th style="text-align:center">Result</th></tr></thead>
-      <tbody>${termRows}</tbody>
-    </table>
-    <div class="sig">
-      <span>Class Teacher: _______________</span>
-      <span>Principal: _______________</span>
-      <span>Parent Signature: _______________</span>
-    </div>
-    <div class="dev-footer">© 2026 DISS — All Rights Reserved &nbsp;|&nbsp; Powered by Tataheer Business Group &nbsp;|&nbsp; +923218555566</div>
-    <script>window.onload=function(){window.print();}<\/script>
-    </body></html>`);
+    win.document.write(`<!DOCTYPE html><html><head><title>Result Card — ${stu.name}</title><style>${PRINT_CSS}</style></head><body>${cardHTML}<script>window.onload=function(){window.print();}<\/script></body></html>`);
     win.document.close();
   };
 
   const printAllResults = () => {
-    const subjs = getSubjects(selCls);
-    const cards = classStu.map(stu => {
-      const marks  = getMarks(stu);
-      const total  = calcTotal(marks);
-      const pct    = calcPct(marks, subjs);
-      const grade  = getGrade(pct);
-      const pf     = passOrFail(pct);
-      const subjRows = subjs.map(s => {
-        const m = marks[s] !== undefined && marks[s] !== '' ? Number(marks[s]) : '—';
-        const grd = m==='—' ? '—' : getGrade(Math.round(Number(m)/TOTAL_MARKS*100));
-        return `<tr><td>${s}</td><td style="text-align:center">${TOTAL_MARKS}</td><td style="text-align:center;font-weight:700">${m}</td><td style="text-align:center">${grd}</td></tr>`;
-      }).join('');
-      return `
-        <div style="page-break-after:always;padding-bottom:20px">
-          <div style="text-align:center;border-bottom:2px solid #1e3a8a;padding-bottom:8px;margin-bottom:12px">
-            <div style="font-size:17px;font-weight:800;color:#1e3a8a">Discovery International School System</div>
-            <div style="font-size:10px;color:#6b7280">Wagha Road, Jallo More, Lahore | +92 (322) 8555566</div>
-            <div style="font-size:12px;font-weight:700;color:#1e3a8a;margin-top:4px">RESULT CARD — ${selTerm} ${selYear}</div>
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;background:#f8fafc;padding:8px;border-radius:8px;margin-bottom:10px;font-size:11px">
-            <div><span style="color:#6b7280">Student:</span> <b>${stu.name}</b></div>
-            <div><span style="color:#6b7280">Father:</span> <b>${stu.father||'—'}</b></div>
-            <div><span style="color:#6b7280">Class:</span> <b>${stu.cls}</b></div>
-            <div><span style="color:#6b7280">Roll No:</span> <b>${stu.roll}</b></div>
-          </div>
-          <table style="width:100%;border-collapse:collapse;font-size:11px">
-            <thead><tr style="background:#1e3a8a;color:#fff"><th style="padding:6px 10px;text-align:left">Subject</th><th style="padding:6px 10px;text-align:center">Total</th><th style="padding:6px 10px;text-align:center">Obtained</th><th style="padding:6px 10px;text-align:center">Grade</th></tr></thead>
-            <tbody>${subjRows}</tbody>
-            <tfoot><tr style="background:#e0f2fe"><td style="padding:6px 10px;font-weight:700">Total</td><td style="padding:6px 10px;text-align:center;font-weight:700">${subjs.length*TOTAL_MARKS}</td><td style="padding:6px 10px;text-align:center;font-weight:700">${total}</td><td style="padding:6px 10px;text-align:center;font-weight:700">${grade}</td></tr></tfoot>
-          </table>
-          <div style="display:flex;gap:8px;margin-top:8px;font-size:11px">
-            <div style="background:#dbeafe;color:#1d4ed8;border-radius:8px;padding:6px 12px;flex:1;text-align:center"><b>${total}/${subjs.length*TOTAL_MARKS}</b><br/><span style="font-size:9px">MARKS</span></div>
-            <div style="background:#ede9fe;color:#6d28d9;border-radius:8px;padding:6px 12px;flex:1;text-align:center"><b>${pct}%</b><br/><span style="font-size:9px">PERCENTAGE</span></div>
-            <div style="background:#ede9fe;color:#6d28d9;border-radius:8px;padding:6px 12px;flex:1;text-align:center"><b>${grade}</b><br/><span style="font-size:9px">GRADE</span></div>
-            <div style="background:${pf==='PASS'?'#dcfce7':'#fee2e2'};color:${pf==='PASS'?'#15803d':'#dc2626'};border-radius:8px;padding:6px 12px;flex:1;text-align:center"><b>${pf}</b><br/><span style="font-size:9px">RESULT</span></div>
-          </div>
-          <div style="display:flex;justify-content:space-between;margin-top:24px;font-size:10px;color:#6b7280;border-top:1px dashed #e5e7eb;padding-top:10px">
-            <span>Class Teacher: ___________</span><span>Principal: ___________</span><span>Parent Sign: ___________</span>
-          </div>
-        </div>`;
-    }).join('');
-    const win = window.open('','_blank','width=750,height=700');
+    const posMap = getPositionMap(classStu);
+    const cards  = classStu.map(stu => buildCardHTML(stu, posMap[stu.id])).join('\n');
+    const win = window.open('','_blank','width=720,height=800');
     if (!win) { alert('Popup blocked! Please allow popups for this site to print.'); return; }
-    win.document.write(`<!DOCTYPE html><html><head><title>Result Cards</title><style>*{box-sizing:border-box}body{font-family:'Segoe UI',Arial,sans-serif;padding:20px;color:#1a1a1a}@media print{body{padding:8px}button{display:none!important}}</style></head><body>${cards}<script>window.onload=function(){window.print();}<\/script></body></html>`);
+    win.document.write(`<!DOCTYPE html><html><head><title>Result Cards — Class ${selCls}</title><style>${PRINT_CSS}</style></head><body>${cards}<script>window.onload=function(){window.print();}<\/script></body></html>`);
     win.document.close();
   };
 
@@ -7498,7 +8061,7 @@ function Exams() {
       {/* Tabs */}
       <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit mb-5">
         {[['datesheet','📅 Date Sheet'],['results','📊 Result Cards'],['paper','📝 Paper']].map(([k,l])=>(
-          <button key={k} onClick={()=>setTab(k)}
+          <button key={k} onClick={()=>setTabSafe(k)}
             className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${tab===k?'bg-white shadow text-blue-700':'text-gray-500 hover:text-gray-700'}`}>{l}</button>
         ))}
       </div>
@@ -7582,20 +8145,58 @@ function Exams() {
       {/* ── RESULT CARDS TAB ── */}
       {tab==='results' && (
         <div>
-          <div className="flex gap-2 mb-4">
-            <Btn onClick={printAllResults}>🖨️ Print All Cards — Class {selCls}</Btn>
+          {/* Toolbar */}
+          <div className="flex flex-wrap items-center gap-2 mb-4 p-3 bg-blue-50 rounded-xl border border-blue-100">
+            <span className="text-sm font-semibold text-blue-800">📝 Set Default Total Marks:</span>
+            <input type="number" min="1" value={defaultTotal} onChange={e=>setDefaultTotal(e.target.value)}
+              placeholder="e.g. 25"
+              className="border border-blue-200 rounded-lg px-3 py-1.5 text-sm w-24 focus:outline-none focus:ring-2 focus:ring-blue-400"/>
+            <Btn onClick={applyToAll}>✅ Apply to All</Btn>
+            <Btn variant="outline" onClick={resetAllTo100}>🔄 Reset All to 100</Btn>
+            <Btn variant="outline" onClick={openSubjEditor}>⚙️ Edit Subjects</Btn>
+            <div className="ml-auto"><Btn onClick={printAllResults}>🖨️ Print All Cards — Class {selCls}</Btn></div>
           </div>
+
+          {/* Subject Editor Popup */}
+          {showSubjEditor && (
+            <Modal title={`⚙️ Edit Subjects — Class ${selCls}`} onClose={()=>setShowSubjEditor(false)} xl>
+              <p className="text-xs text-gray-500 mb-4">Rename, remove, add subjects and set total marks. Changes apply to this class only.</p>
+              <div className="grid grid-cols-12 gap-2 mb-2 px-1">
+                <div className="col-span-1 text-xs font-bold text-gray-400 uppercase">#</div>
+                <div className="col-span-6 text-xs font-bold text-gray-400 uppercase">Subject Name</div>
+                <div className="col-span-3 text-xs font-bold text-gray-400 uppercase">Total Marks</div>
+                <div className="col-span-2 text-xs font-bold text-gray-400 uppercase text-center">Remove</div>
+              </div>
+              <div className="space-y-2 mb-4 max-h-80 overflow-y-auto pr-1">
+                {editorRows.map((row,idx)=>(
+                  <div key={idx} className="grid grid-cols-12 gap-2 items-center bg-gray-50 rounded-xl px-2 py-1.5">
+                    <div className="col-span-1 text-xs font-bold text-gray-400">{idx+1}</div>
+                    <div className="col-span-6"><input value={row.name} onChange={e=>setEditorRows(rows=>rows.map((r,i)=>i===idx?{...r,name:e.target.value}:r))} className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" placeholder="Subject name"/></div>
+                    <div className="col-span-3"><input type="number" min="1" value={row.total} onChange={e=>setEditorRows(rows=>rows.map((r,i)=>i===idx?{...r,total:e.target.value}:r))} className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-400" placeholder="100"/></div>
+                    <div className="col-span-2 text-center"><button onClick={()=>setEditorRows(rows=>rows.filter((_,i)=>i!==idx))} className="text-red-400 hover:text-red-600 text-xl font-bold px-2 rounded hover:bg-red-50 transition-all">✕</button></div>
+                  </div>
+                ))}
+              </div>
+              <button onClick={()=>setEditorRows(rows=>[...rows,{name:'',total:'100'}])} className="w-full border-2 border-dashed border-blue-300 rounded-xl py-2 text-sm font-semibold text-blue-600 hover:bg-blue-50 transition-all mb-5">+ Add Subject</button>
+              <div className="flex gap-2 flex-wrap">
+                <Btn onClick={saveSubjEditor}>💾 Save Changes</Btn>
+                <Btn variant="outline" onClick={()=>setShowSubjEditor(false)}>Cancel</Btn>
+                <div className="ml-auto"><Btn variant="red" onClick={resetSubjEditor}>🔄 Reset to Default</Btn></div>
+              </div>
+            </Modal>
+          )}
 
           {classStu.length===0
             ? <Empty icon="📊" text="No students in this class yet."/>
             : <div className="space-y-4">
                 {classStu.map(stu=>{
-                  const subjs  = getSubjects(stu.cls);
-                  const marks  = getMarks(stu);
-                  const total  = calcTotal(marks);
-                  const pct    = calcPct(marks, subjs);
-                  const grade  = getGrade(pct);
-                  const pf     = passOrFail(pct);
+                  const subjs   = getSubjects(stu.cls);
+                  const marks   = getMarks(stu);
+                  const total   = calcTotal(marks, subjs);
+                  const maxTot  = calcMaxTotal(subjs);
+                  const pct     = calcPct(marks, subjs);
+                  const grade   = getGrade(pct);
+                  const pf      = passOrFail(pct);
                   return (
                     <Card key={stu.id} className="overflow-hidden">
                       <div className="px-5 py-3 bg-blue-50 border-b border-blue-100 flex items-center justify-between">
@@ -7616,17 +8217,23 @@ function Exams() {
                           {subjs.map(subj=>(
                             <div key={subj} className="bg-gray-50 rounded-xl p-2">
                               <p className="text-xs text-gray-500 mb-1 truncate" title={subj}>{subj}</p>
-                              <input type="number" min="0" max={TOTAL_MARKS}
+                              <input type="number" min="0" max={getSubjTotal(subj)}
                                 value={marks[subj]!==undefined ? marks[subj] : ''}
                                 onChange={e=>updateMark(stu, subj, e.target.value)}
                                 placeholder="—"
                                 className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-center font-bold focus:outline-none focus:ring-2 focus:ring-blue-400"/>
-                              <p className="text-xs text-gray-300 text-center mt-0.5">/ {TOTAL_MARKS}</p>
+                              <div className="flex items-center justify-center gap-1 mt-0.5">
+                                <span className="text-xs text-gray-300">/</span>
+                                <input type="number" min="1"
+                                  value={subjectTotals[subj]!==undefined ? subjectTotals[subj] : TOTAL_MARKS}
+                                  onChange={e=>setSubjTotal(subj, e.target.value)}
+                                  className="w-14 border border-gray-200 rounded px-1 py-0.5 text-xs text-center text-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-300"/>
+                              </div>
                             </div>
                           ))}
                         </div>
                         <div className="mt-3 flex gap-3 text-sm">
-                          <span className="text-gray-500">Total: <b className="text-gray-800">{total} / {subjs.length*TOTAL_MARKS}</b></span>
+                          <span className="text-gray-500">Total: <b className="text-gray-800">{total} / {maxTot}</b></span>
                           <span className="text-gray-500">Percentage: <b className="text-blue-700">{pct}%</b></span>
                           <span className="text-gray-500">Grade: <b className="text-purple-700">{grade}</b></span>
                         </div>
@@ -7647,24 +8254,24 @@ function Exams() {
             <h3 className="font-bold text-gray-700 mb-3">📋 Paper Settings</h3>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
               <div><label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Class</label>
-                <select value={paperSettings.cls} onChange={e=>setPaperSettings({...paperSettings,cls:e.target.value})} className={inputCls}>
+                <select value={paperSettings.cls} onChange={e=>setPaperSettingsSafe({...paperSettings,cls:e.target.value})} className={inputCls}>
                   {CLASSES.map(c=><option key={c} value={c}>Class {c}</option>)}</select></div>
               <div><label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Subject</label>
-                <input value={paperSettings.subject} onChange={e=>setPaperSettings({...paperSettings,subject:e.target.value})} className={inputCls} placeholder="English"/></div>
+                <input value={paperSettings.subject} onChange={e=>setPaperSettingsSafe({...paperSettings,subject:e.target.value})} className={inputCls} placeholder="English"/></div>
               <div><label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Term</label>
-                <select value={paperSettings.term} onChange={e=>setPaperSettings({...paperSettings,term:e.target.value})} className={inputCls}>
+                <select value={paperSettings.term} onChange={e=>setPaperSettingsSafe({...paperSettings,term:e.target.value})} className={inputCls}>
                   {TERMS.map(t=><option key={t}>{t}</option>)}</select></div>
               <div><label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Year</label>
-                <select value={paperSettings.year} onChange={e=>setPaperSettings({...paperSettings,year:Number(e.target.value)})} className={inputCls}>
+                <select value={paperSettings.year} onChange={e=>setPaperSettingsSafe({...paperSettings,year:Number(e.target.value)})} className={inputCls}>
                   {years.map(y=><option key={y}>{y}</option>)}</select></div>
               <div><label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Date</label>
-                <input type="date" value={paperSettings.date} onChange={e=>setPaperSettings({...paperSettings,date:e.target.value})} className={inputCls}/></div>
+                <input type="date" value={paperSettings.date} onChange={e=>setPaperSettingsSafe({...paperSettings,date:e.target.value})} className={inputCls}/></div>
               <div><label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Total Marks</label>
-                <input type="number" value={paperSettings.totalMarks} onChange={e=>setPaperSettings({...paperSettings,totalMarks:e.target.value})} className={inputCls}/></div>
+                <input type="number" value={paperSettings.totalMarks} onChange={e=>setPaperSettingsSafe({...paperSettings,totalMarks:e.target.value})} className={inputCls}/></div>
               <div><label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Time Allowed</label>
-                <input value={paperSettings.time} onChange={e=>setPaperSettings({...paperSettings,time:e.target.value})} className={inputCls} placeholder="2 Hours"/></div>
+                <input value={paperSettings.time} onChange={e=>setPaperSettingsSafe({...paperSettings,time:e.target.value})} className={inputCls} placeholder="2 Hours"/></div>
               <div className="col-span-2 sm:col-span-3 lg:col-span-1"><label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Instructions</label>
-                <input value={paperSettings.instructions} onChange={e=>setPaperSettings({...paperSettings,instructions:e.target.value})} className={inputCls} placeholder="Attempt all questions."/></div>
+                <input value={paperSettings.instructions} onChange={e=>setPaperSettingsSafe({...paperSettings,instructions:e.target.value})} className={inputCls} placeholder="Attempt all questions."/></div>
             </div>
           </Card>
 
@@ -8116,7 +8723,7 @@ function CashBook() {
       }
     }
     const acct = accounts.find(a => a.id === ef.accountId);
-    const entry = { id: uid(), date: ef.date, type: ef.type, description: ef.description.trim(), amount: Number(ef.amount), accountId: ef.accountId, accountName: acct?.name || '', note: ef.note, refType: 'manual' };
+    const entry = { id: uid(), date: ef.date, type: ef.type, description: ef.description.trim(), amount: Number(ef.amount), accountId: ef.accountId, accountName: acct?.name || '', note: ef.note, refType: ef.refType || 'manual' };
     const updated = [...entries, entry];
     S.set(K.CBOOK, updated); setEntries(updated);
     setEntryMod(false);
@@ -8207,7 +8814,9 @@ function CashBook() {
           <Btn variant="outline" onClick={refreshEntries}>🔄</Btn>
           <Btn variant="outline" onClick={printCashBook}>🖨️ Print</Btn>
           {isAdmin && <Btn variant="outline" onClick={() => { setTransferMod(true); setTf({ date: today, fromId: accounts[0]?.id||'', toId: accounts[1]?.id||'', amount:'', note:'' }); }}>↔ Transfer</Btn>}
-          {isAdmin && <Btn onClick={() => { setEntryMod(true); setEf({ date: today, type:'income', description:'', amount:'', accountId: accounts[0]?.id||'', note:'' }); }}>+ Add Entry</Btn>}
+          {isAdmin && <Btn variant="outline" onClick={() => { setEntryMod(true); setEf({ date: today, type:'income', description:'Owner Capital Investment', amount:'', accountId: accounts[0]?.id||'', note:'', refType:'owner_capital' }); }}>💰 Capital</Btn>}
+          {isAdmin && <Btn variant="outline" onClick={() => { setEntryMod(true); setEf({ date: today, type:'expense', description:'Owner Drawing / Withdrawal', amount:'', accountId: accounts[0]?.id||'', note:'', refType:'owner_drawing' }); }}>💸 Drawing</Btn>}
+          {isAdmin && <Btn onClick={() => { setEntryMod(true); setEf({ date: today, type:'income', description:'', amount:'', accountId: accounts[0]?.id||'', note:'', refType:'manual' }); }}>+ Add Entry</Btn>}
         </div>
       </div>
 
@@ -8760,6 +9369,22 @@ function SecuritySettings() {
 
       {/* Factory Reset */}
       <Card className="p-5 border-2 border-red-300 bg-red-50 mb-6">
+        {/* ── June 2026 Fresh Start Reset ── */}
+        <Card className="p-5 border-2 border-orange-300 bg-orange-50 mb-5">
+          <div className="flex items-center gap-2 mb-2"><span className="text-xl">🔄</span><p className="font-bold text-orange-700 text-base">Fresh Start — June 2026 Reset</p><span className="text-xs bg-orange-500 text-white font-bold px-2 py-0.5 rounded-full">IRREVERSIBLE</span></div>
+          <ul className="list-disc pl-5 text-xs text-orange-700 space-y-0.5 mb-4"><li>All student opening balances → <b>Rs. 0</b></li><li>Fee payments before June 2026 → <b>deleted</b></li><li>Cash book entries before June 2026 → <b>deleted</b></li><li>Account opening balances → <b>Rs. 0</b></li><li>Annual fund amounts → <b>kept</b></li></ul>
+          <Btn variant="outline" onClick={() => window.requireMasterCode(() => {
+            if (!window.confirm('CONFIRM JUNE RESET:\n• All opening balances → Rs. 0\n• Payments before June 2026 → deleted\n• Cash book before June 2026 → deleted\n\nThis cannot be undone. Continue?')) return;
+            const students = S.get(K.STU, []);
+            S.set(K.STU, students.map(s => ({ ...s, openingBalance: '' })));
+            S.set(K.PAY, S.get(K.PAY, []).filter(p => Number(p.year) > 2026 || (Number(p.year) === 2026 && Number(p.month) >= 5)));
+            S.set(K.CBOOK, S.get(K.CBOOK, []).filter(e => { const d=new Date(e.date||0); return d.getFullYear()===2026&&d.getMonth()===5; }));
+            S.set(K.ACCT, S.get(K.ACCT, []).map(a => ({ ...a, openingBalance: 0 })));
+            alert('✅ June 2026 Reset complete! Please refresh the page.');
+            if (window._smsRefresh) window._smsRefresh();
+          }, 'June 2026 Fresh Start Reset')}>🔄 Run June 2026 Fresh Start Reset</Btn>
+        </Card>
+
         <div className="flex items-center gap-2 mb-2">
           <span className="text-xl">⚠️</span>
           <p className="font-bold text-red-700 text-base">Factory Reset — Clear All Data</p>
@@ -8861,11 +9486,150 @@ function SecuritySettings() {
   );
 }
 
+// ── ASSETS & PROFIT/LOSS ─────────────────────────────────────────────────────
+function Assets() {
+  const CATS = ['Furniture','Electronics','Vehicles','Building','Equipment','Other'];
+  const [assets, setAssets]   = useState(() => S.get(K.ASSET, []));
+  const [form, setForm]       = useState({ name:'', category:'Furniture', purchaseDate:'', purchaseValue:'', currentValue:'', notes:'' });
+  const [editId, setEditId]   = useState(null);
+  const [filterCat, setFilterCat] = useState('All');
+  const [tab, setTab]         = useState('assets');
+  const [plYear, setPlYear]   = useState(NOW.getFullYear());
+  const [plPeriod, setPlPeriod] = useState('annual');
+  const [plMonth, setPlMonth] = useState(NOW.getMonth());
+  const persist = a => { S.set(K.ASSET, a); setAssets(a); };
+  const resetForm = () => { setForm({ name:'', category:'Furniture', purchaseDate:'', purchaseValue:'', currentValue:'', notes:'' }); setEditId(null); };
+  const save = () => {
+    if (!form.name.trim() || !form.purchaseValue) return alert('Name and Purchase Value required.');
+    if (editId) { persist(assets.map(a => a.id===editId ? {...a,...form} : a)); }
+    else { persist([...assets, {...form, id:uid(), addedAt:Date.now()}]); }
+    resetForm();
+  };
+  const startEdit = a => { setForm({ name:a.name, category:a.category, purchaseDate:a.purchaseDate||'', purchaseValue:a.purchaseValue, currentValue:a.currentValue||'', notes:a.notes||'' }); setEditId(a.id); };
+  const del = id => { if (!window.confirm('Delete this asset?')) return; persist(assets.filter(a=>a.id!==id)); };
+  const filtered = filterCat==='All' ? assets : assets.filter(a=>a.category===filterCat);
+  const totalPurchase = assets.reduce((s,a)=>s+Number(a.purchaseValue||0),0);
+  const totalCurrent  = assets.reduce((s,a)=>s+Number(a.currentValue||a.purchaseValue||0),0);
+  const totalDeprec   = totalPurchase - totalCurrent;
+  const cy = NOW.getFullYear();
+  const _allPay = S.get(K.PAY,[]), _allCb = S.get(K.CBOOK,[]);
+  const plYears = Array.from(new Set([..._allPay.map(p=>Number(p.year)||cy), ..._allCb.map(e=>new Date(e.date||0).getFullYear()), cy])).sort((a,b)=>b-a);
+  const { feeIncome, afIncome, booksIncome, cbIncome, totalIncome, cbExpenses, salaryExp, totalExpenses, netPL,
+          ownerCapital, ownerDrawing, ownerEquity, allTimeNetPL } = calcPL({ year:plYear, period:plPeriod, month:plMonth });
+  const inputCls = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400';
+  const printPL = () => {
+    const period = plPeriod==='monthly' ? `${MONTHS[plMonth]} ${plYear}` : `Annual ${plYear}`;
+    const rows = [['Fee Income',feeIncome],['Annual Fund',afIncome],['Books Income',booksIncome],['Other Income (Cash Book)',cbIncome]].map(([l,v])=>`<tr><td>${l}</td><td class="r">Rs. ${Number(v).toLocaleString()}</td></tr>`).join('');
+    const erows = [['Operating Expenses (Cash Book)',cbExpenses],['Salary Payments',salaryExp]].map(([l,v])=>`<tr><td>${l}</td><td class="r">Rs. ${Number(v).toLocaleString()}</td></tr>`).join('');
+    const win = window.open('','_blank','width=680,height=700');
+    if (!win) { alert('Popup blocked!'); return; }
+    win.document.write(`<!DOCTYPE html><html><head><title>P&L</title><style>*{box-sizing:border-box}body{font-family:'Segoe UI',Arial,sans-serif;padding:28px;max-width:620px;margin:auto;font-size:12px;color:#1a1a1a}.hdr{text-align:center;border-bottom:2px solid #1e3a8a;padding-bottom:10px;margin-bottom:16px}.hdr img{height:60px;object-fit:contain}h1{font-size:17px;color:#1e3a8a;margin:4px 0}.sub{font-size:11px;color:#6b7280}table{width:100%;border-collapse:collapse;margin:10px 0}th{background:#1e3a8a;color:#fff;padding:7px 10px;text-align:left;font-size:10px;text-transform:uppercase}td{padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:11px}.r{text-align:right}.total-row td{background:#dbeafe;font-weight:700}.net-pos td{background:#dcfce7;color:#15803d;font-weight:800;font-size:13px}.net-neg td{background:#fee2e2;color:#dc2626;font-weight:800;font-size:13px}.dev-footer{text-align:center;margin-top:16px;font-size:8px;color:#9ca3af;border-top:1px solid #e5e7eb;padding-top:8px}@media print{body{padding:12px}}</style></head><body><div class="hdr"><img src="${LOGO_SRC}" alt="DISS" onerror="this.style.display='none'"/><h1>Profit &amp; Loss Statement</h1><p class="sub">Period: ${period}</p></div><table><thead><tr><th colspan="2">INCOME</th></tr></thead><tbody>${rows}<tr class="total-row"><td><b>Total Income</b></td><td class="r"><b>Rs. ${totalIncome.toLocaleString()}</b></td></tr></tbody></table><table><thead><tr><th colspan="2">EXPENSES</th></tr></thead><tbody>${erows}<tr class="total-row"><td><b>Total Expenses</b></td><td class="r"><b>Rs. ${totalExpenses.toLocaleString()}</b></td></tr></tbody></table><table><tbody><tr class="${netPL>=0?'net-pos':'net-neg'}"><td>${netPL>=0?'NET PROFIT':'NET LOSS'}</td><td class="r">Rs. ${Math.abs(netPL).toLocaleString()}</td></tr></tbody></table><div class="dev-footer">© 2026 DISS — All Rights Reserved | Powered by Tataheer Business Group | +923218555566</div><script>window.onload=function(){window.print()}<\/script></body></html>`);
+    win.document.close();
+  };
+  const tabCls = a => `px-4 py-2 rounded-lg text-sm font-semibold transition-all ${a?'bg-blue-700 text-white shadow':'bg-white text-gray-600 border border-gray-200 hover:bg-blue-50'}`;
+  return (
+    <div>
+      <div className="mb-5"><h2 className="text-2xl font-extrabold text-gray-800">🏛️ Assets &amp; P&amp;L</h2><p className="text-sm text-gray-500 mt-0.5">Track school assets and view Profit &amp; Loss reports</p></div>
+      <div className="flex gap-2 mb-5">
+        <button className={tabCls(tab==='assets')} onClick={()=>setTab('assets')}>🏛️ Assets</button>
+        <button className={tabCls(tab==='pl')} onClick={()=>setTab('pl')}>📊 Profit &amp; Loss</button>
+      </div>
+      {tab==='assets' && (
+        <div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
+            {[{label:'Total Assets',value:`Rs. ${totalPurchase.toLocaleString()}`,sub:'Purchase value',icon:'🏛️',color:'blue'},{label:'Current Value',value:`Rs. ${totalCurrent.toLocaleString()}`,sub:'After depreciation',icon:'💎',color:'green'},{label:'Depreciation',value:`Rs. ${totalDeprec.toLocaleString()}`,sub:'Total loss in value',icon:'📉',color:'red'}].map(c=>(
+              <div key={c.label} className={`rounded-2xl p-4 border-2 ${c.color==='blue'?'bg-blue-50 border-blue-200':c.color==='green'?'bg-green-50 border-green-200':'bg-red-50 border-red-200'}`}>
+                <div className="text-2xl mb-1">{c.icon}</div>
+                <div className={`text-xl font-extrabold ${c.color==='blue'?'text-blue-700':c.color==='green'?'text-green-700':'text-red-600'}`}>{c.value}</div>
+                <div className="text-xs text-gray-500 mt-0.5">{c.sub} · {assets.length} items</div>
+              </div>
+            ))}
+          </div>
+          <Card className="p-4 mb-5">
+            <h3 className="font-bold text-gray-700 mb-3">{editId?'✏️ Edit Asset':'➕ Add New Asset'}</h3>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <div className="col-span-2 sm:col-span-1"><label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Asset Name *</label><input value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="e.g. Computer Lab PC" className={inputCls}/></div>
+              <div><label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Category</label><select value={form.category} onChange={e=>setForm({...form,category:e.target.value})} className={inputCls}>{CATS.map(c=><option key={c}>{c}</option>)}</select></div>
+              <div><label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Purchase Date</label><input type="date" value={form.purchaseDate} onChange={e=>setForm({...form,purchaseDate:e.target.value})} className={inputCls}/></div>
+              <div><label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Purchase Value (Rs.) *</label><input type="number" min="0" value={form.purchaseValue} onChange={e=>setForm({...form,purchaseValue:e.target.value})} placeholder="0" className={inputCls}/></div>
+              <div><label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Current Value (Rs.)</label><input type="number" min="0" value={form.currentValue} onChange={e=>setForm({...form,currentValue:e.target.value})} placeholder="Same as purchase if blank" className={inputCls}/></div>
+              <div className="col-span-2 sm:col-span-1"><label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Notes</label><input value={form.notes} onChange={e=>setForm({...form,notes:e.target.value})} placeholder="Optional" className={inputCls}/></div>
+            </div>
+            <div className="flex gap-2 mt-3"><Btn onClick={save}>{editId?'💾 Update':'➕ Add Asset'}</Btn>{editId&&<Btn variant="outline" onClick={resetForm}>Cancel</Btn>}</div>
+          </Card>
+          <div className="flex gap-2 mb-3 flex-wrap">{['All',...CATS].map(c=>(<button key={c} onClick={()=>setFilterCat(c)} className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${filterCat===c?'bg-blue-700 text-white border-blue-700':'bg-white text-gray-600 border-gray-200 hover:bg-blue-50'}`}>{c}</button>))}</div>
+          {filtered.length===0 ? <Empty icon="🏛️" text="No assets yet. Add your first asset above."/> : (
+            <div className="space-y-2">{filtered.map(a=>{
+              const pv=Number(a.purchaseValue||0), cv=Number(a.currentValue||a.purchaseValue||0), dep=pv-cv;
+              return (<Card key={a.id} className="p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+                <div className="flex-1 min-w-0"><div className="flex items-center gap-2 flex-wrap"><span className="font-bold text-gray-800">{a.name}</span><Badge color="blue">{a.category}</Badge>{a.purchaseDate&&<span className="text-xs text-gray-400">{a.purchaseDate}</span>}</div>{a.notes&&<p className="text-xs text-gray-400 mt-0.5">{a.notes}</p>}</div>
+                <div className="flex items-center gap-4 text-sm shrink-0">
+                  <div className="text-center"><div className="text-xs text-gray-400">Purchase</div><div className="font-bold text-blue-700">Rs. {pv.toLocaleString()}</div></div>
+                  <div className="text-center"><div className="text-xs text-gray-400">Current</div><div className="font-bold text-green-700">Rs. {cv.toLocaleString()}</div></div>
+                  {dep>0&&<div className="text-center"><div className="text-xs text-gray-400">Depreciation</div><div className="font-bold text-red-500">- Rs. {dep.toLocaleString()}</div></div>}
+                  <div className="flex gap-1"><button onClick={()=>startEdit(a)} className="text-blue-500 hover:text-blue-700 text-lg px-1">✏️</button><button onClick={()=>del(a.id)} className="text-red-400 hover:text-red-600 text-lg px-1">🗑️</button></div>
+                </div>
+              </Card>);
+            })}</div>
+          )}
+        </div>
+      )}
+      {tab==='pl' && (
+        <div>
+          <Card className="p-4 mb-5">
+            <div className="flex flex-wrap items-end gap-3">
+              <div><label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Period</label><select value={plPeriod} onChange={e=>setPlPeriod(e.target.value)} className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"><option value="annual">Full Year</option><option value="monthly">Monthly</option></select></div>
+              <div><label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Year</label><select value={plYear} onChange={e=>setPlYear(Number(e.target.value))} className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">{plYears.map(y=><option key={y}>{y}</option>)}</select></div>
+              {plPeriod==='monthly'&&<div><label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Month</label><select value={plMonth} onChange={e=>setPlMonth(Number(e.target.value))} className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">{MONTHS.map((mo,i)=><option key={i} value={i}>{mo}</option>)}</select></div>}
+              <Btn onClick={printPL}>🖨️ Print P&amp;L</Btn>
+            </div>
+          </Card>
+          <div className={`rounded-2xl p-5 mb-5 text-center ${netPL>=0?'bg-green-50 border-2 border-green-300':'bg-red-50 border-2 border-red-300'}`}>
+            <p className="text-xs font-bold uppercase tracking-widest mb-1 text-gray-500">{netPL>=0?'NET PROFIT':'NET LOSS'}</p>
+            <p className={`text-4xl font-extrabold ${netPL>=0?'text-green-700':'text-red-600'}`}>Rs. {Math.abs(netPL).toLocaleString()}</p>
+            <p className="text-xs text-gray-500 mt-1">{plPeriod==='monthly'?`${MONTHS[plMonth]} ${plYear}`:`Annual ${plYear}`}</p>
+          </div>
+          <Card className="p-4 mb-4">
+            <h3 className="font-bold text-green-700 mb-3">📈 Income</h3>
+            <table className="w-full text-sm"><thead><tr className="border-b-2 border-green-200"><th className="text-left py-2 text-gray-500 font-semibold text-xs uppercase">Source</th><th className="text-right py-2 text-gray-500 font-semibold text-xs uppercase">Amount</th></tr></thead>
+            <tbody>{[['📒 Fee Income',feeIncome],['🏦 Annual Fund',afIncome],['📚 Books Income',booksIncome],['💵 Other Income (Cash Book)',cbIncome]].map(([l,v])=>(<tr key={l} className="border-b border-gray-100"><td className="py-2 text-gray-700">{l}</td><td className="py-2 text-right font-semibold text-green-700">Rs. {Number(v).toLocaleString()}</td></tr>))}
+            <tr className="bg-green-50 font-bold"><td className="py-2.5 px-2 rounded-l-lg text-green-800">Total Income</td><td className="py-2.5 px-2 rounded-r-lg text-right text-green-800">Rs. {totalIncome.toLocaleString()}</td></tr></tbody></table>
+          </Card>
+          <Card className="p-4 mb-4">
+            <h3 className="font-bold text-red-600 mb-3">📉 Expenses</h3>
+            <table className="w-full text-sm"><thead><tr className="border-b-2 border-red-200"><th className="text-left py-2 text-gray-500 font-semibold text-xs uppercase">Category</th><th className="text-right py-2 text-gray-500 font-semibold text-xs uppercase">Amount</th></tr></thead>
+            <tbody>{[['🧾 Operating Expenses (Cash Book)',cbExpenses],['👩‍🏫 Salary Payments',salaryExp]].map(([l,v])=>(<tr key={l} className="border-b border-gray-100"><td className="py-2 text-gray-700">{l}</td><td className="py-2 text-right font-semibold text-red-600">Rs. {Number(v).toLocaleString()}</td></tr>))}
+            <tr className="bg-red-50 font-bold"><td className="py-2.5 px-2 rounded-l-lg text-red-800">Total Expenses</td><td className="py-2.5 px-2 rounded-r-lg text-right text-red-800">Rs. {totalExpenses.toLocaleString()}</td></tr></tbody></table>
+          </Card>
+          {assets.length>0&&<Card className="p-4 bg-purple-50 border-2 border-purple-200 mb-4"><h3 className="font-bold text-purple-800 mb-2">🏛️ Asset Book Value</h3><div className="flex gap-6 text-sm"><div><span className="text-gray-500">Total Purchase: </span><b className="text-purple-700">Rs. {totalPurchase.toLocaleString()}</b></div><div><span className="text-gray-500">Current Value: </span><b className="text-green-700">Rs. {totalCurrent.toLocaleString()}</b></div><div><span className="text-gray-500">Depreciation: </span><b className="text-red-600">Rs. {totalDeprec.toLocaleString()}</b></div></div></Card>}
+
+          {/* Owner Equity Section */}
+          <Card className={`p-4 border-2 ${ownerEquity>=0?'bg-emerald-50 border-emerald-300':'bg-red-50 border-red-300'}`}>
+            <h3 className="font-bold text-gray-800 mb-3">🏦 Owner / Partner Equity (All-Time)</h3>
+            <table className="w-full text-sm">
+              <tbody>
+                <tr className="border-b border-gray-100"><td className="py-2 text-gray-600">💰 Capital Invested (Owner)</td><td className="py-2 text-right font-semibold text-blue-700">Rs. {ownerCapital.toLocaleString()}</td></tr>
+                <tr className="border-b border-gray-100"><td className="py-2 text-gray-600">📈 All-Time Net {allTimeNetPL>=0?'Profit':'Loss'}</td><td className={`py-2 text-right font-semibold ${allTimeNetPL>=0?'text-green-700':'text-red-600'}`}>Rs. {Math.abs(allTimeNetPL).toLocaleString()}</td></tr>
+                <tr className="border-b border-gray-100"><td className="py-2 text-gray-600">💸 Owner Drawings (Withdrawals)</td><td className="py-2 text-right font-semibold text-orange-600">− Rs. {ownerDrawing.toLocaleString()}</td></tr>
+                <tr className={`font-bold text-base ${ownerEquity>=0?'text-emerald-700':'text-red-600'}`}>
+                  <td className="py-3">= Net Owner Equity</td>
+                  <td className="py-3 text-right">Rs. {Math.abs(ownerEquity).toLocaleString()}</td>
+                </tr>
+              </tbody>
+            </table>
+            <p className="text-xs text-gray-400 mt-2">Formula: Capital + All-Time Net Profit − Drawings → from <b>calcPL()</b> via K.CBOOK</p>
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const NAV_ALL = [
   { id:'dashboard',     label:'Dashboard',       icon:'🏠',  roles:['admin','staff','principal','accountant','teacher'] },
   { id:'students',      label:'Students',        icon:'👨‍🎓', roles:['admin','staff','principal'] },
-  { id:'feecollect',    label:'Student Ledger',  icon:'📒',  roles:['admin','staff','principal','accountant'] },
-  { id:'fees',          label:'Fee Collection',  icon:'💰',  roles:['admin','staff','principal','accountant'] },
+  { id:'feecollect',    label:'Fee Collection',  icon:'💰',  roles:['admin','staff','principal','accountant'] },
+  { id:'fees',          label:'Student Ledger',  icon:'📒',  roles:['admin','staff','principal','accountant'] },
   { id:'inventory',     label:'Inventory',       icon:'📦',  roles:['admin','staff','principal'] },
   { id:'expenses',      label:'Expenses',        icon:'🧾',  roles:['admin','staff','principal','accountant'] },
   { id:'family',        label:'Family Ledger',   icon:'👨‍👩‍👧‍👦', roles:['admin','staff','principal','accountant'] },
@@ -8873,6 +9637,7 @@ const NAV_ALL = [
   { id:'books',         label:'Books & Vendors', icon:'📚',  roles:['admin','staff','principal'] },
   { id:'exams',         label:'Exams',           icon:'📝',  roles:['admin','staff','principal'] },
   { id:'cashbook',      label:'Cash Book',       icon:'💼',  roles:['admin','principal','accountant'] },
+  { id:'assets',        label:'Assets & P&L',   icon:'🏛️',  roles:['admin','principal','accountant'] },
   { id:'notifications', label:'Notifications',   icon:'📢',  roles:['admin','principal','teacher'] },
   { id:'users',         label:'User Management', icon:'🔐',  roles:['admin'] },
   { id:'security',      label:'Security',        icon:'🛡️',  roles:['admin'] },
@@ -8884,6 +9649,40 @@ function App() {
   const [syncTick, setSyncTick] = useState(0);
   const [sideOpen, setSideOpen] = useState(false);
   const [canInstall, setCanInstall] = useState(false);
+  // ── Online / Offline / Firebase connection state ──────────────────────────
+  const [isOnline,     setIsOnline]     = useState(navigator.onLine);
+  const [fbConnected,  setFbConnected]  = useState(false);
+  const [syncMsg,      setSyncMsg]      = useState('');
+  React.useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      setSyncMsg('🔄 Back online — syncing…');
+      setTimeout(() => setSyncMsg(''), 3000);
+      if (window._fbDB) firebase.database().goOnline();
+    };
+    const handleOffline = () => {
+      setIsOnline(false);
+      setSyncMsg('⚠️ Offline — changes saved locally');
+    };
+    window.addEventListener('online',  handleOnline);
+    window.addEventListener('offline', handleOffline);
+    let connRef = null;
+    if (window._fbDB) {
+      connRef = window._fbDB.ref('.info/connected');
+      connRef.on('value', snap => {
+        const connected = snap.val() === true;
+        setFbConnected(connected);
+        if (connected && window._smsRefresh) {
+          setTimeout(() => { if (window._smsRefresh) window._smsRefresh(); }, 500);
+        }
+      });
+    }
+    return () => {
+      window.removeEventListener('online',  handleOnline);
+      window.removeEventListener('offline', handleOffline);
+      if (connRef) connRef.off('value');
+    };
+  }, []);
   React.useEffect(() => { window._smsRefresh = () => setSyncTick(t => t + 1); return () => { window._smsRefresh = null; }; }, []);
   React.useEffect(() => {
     if (window._pwaInstallPrompt) setCanInstall(true);
@@ -8918,7 +9717,6 @@ function App() {
 
   if (!currentUser) return <LoginScreen onLogin={setCurrentUser}/>;
 
-  // Parent role → dedicated portal (no sidebar)
   if (currentUser.role === 'parent') {
     return <ParentPortal currentUser={currentUser} onLogout={() => { clearSession(); setCurrentUser(null); }}/>;
   }
@@ -8927,7 +9725,6 @@ function App() {
     ? NAV_ALL.filter(n => (currentUser.allowedModules || []).includes(n.id))
     : NAV_ALL.filter(n => n.roles.includes(currentUser.role));
   const go  = (p) => { setPage(p); setSideOpen(false); sessionStorage.setItem('_currentPage', p); };
-
   const logout = () => { clearSession(); setCurrentUser(null); setPage('dashboard'); sessionStorage.removeItem('_currentPage'); };
 
   return (
@@ -8967,12 +9764,10 @@ function App() {
           </button>
           {showCalc && (
             <div className="px-3 pb-3">
-              {/* Display */}
               <div className="bg-gray-900 rounded-xl px-3 py-2 mb-2 text-right">
                 {calcOp && <div className="text-xs text-gray-500">{calcPrev} {calcOp}</div>}
                 <div className="text-white font-mono text-xl font-bold truncate">{calcDisp}</div>
               </div>
-              {/* Buttons */}
               {[
                 ['C','⌫','÷','×'],
                 ['7','8','9','-'],
@@ -8982,14 +9777,13 @@ function App() {
               ].map((row, ri) => (
                 <div key={ri} className="grid grid-cols-4 gap-1 mb-1">
                   {row.map((btn, bi) => {
-                    if (ri === 4 && bi === 3) return null; // '=' already shown row 3
+                    if (ri === 4 && bi === 3) return null;
                     const isEq  = btn === '=';
                     const isOp  = ['+','-','×','÷'].includes(btn);
                     const isCl  = btn === 'C';
                     const isDel = btn === '⌫';
                     return (
-                      <button key={bi}
-                        onClick={() => calcPress(btn)}
+                      <button key={bi} onClick={() => calcPress(btn)}
                         className={`py-2 rounded-lg text-sm font-bold transition-all active:scale-95
                           ${isEq  ? 'bg-emerald-500 hover:bg-emerald-400 text-white'
                           : isOp  ? 'bg-amber-500 hover:bg-amber-400 text-white'
@@ -9031,9 +9825,7 @@ function App() {
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <header className="bg-white border-b border-gray-200 sticky top-0 z-10 shadow-sm">
-          {/* Color strip */}
           <div className="h-1 bg-gradient-to-r from-red-500 via-amber-400 to-red-600"/>
-          {/* Ticker */}
           <div className="bg-gray-800 text-white text-xs py-0.5 overflow-hidden" style={{whiteSpace:'nowrap'}}>
             <style>{`@keyframes _ticker{0%{transform:translateX(100vw)}100%{transform:translateX(-100%)}}`}</style>
             <span style={{display:'inline-block',animation:'_ticker 28s linear infinite',paddingLeft:'100%'}}>
@@ -9046,23 +9838,32 @@ function App() {
               <h1 className="text-sm font-bold text-gray-800 leading-tight">{NAV.find(n => n.id === page)?.icon} {NAV.find(n => n.id === page)?.label}</h1>
               <p className="text-xs text-gray-400 leading-tight hidden sm:block">Discovery International School System</p>
             </div>
-            <span className="text-xs text-gray-400 hidden sm:block bg-gray-50 px-2 py-1 rounded-lg border border-gray-100">{NOW.toLocaleDateString('en-PK', { weekday:'short', year:'numeric', month:'short', day:'numeric' })}</span>
+            {syncMsg ? (
+              <span className={`text-xs font-semibold px-2 py-1 rounded-lg border hidden sm:block ${isOnline ? 'bg-blue-50 text-blue-600 border-blue-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>{syncMsg}</span>
+            ) : (
+              <span className={`text-xs font-semibold px-2 py-1 rounded-lg border hidden sm:flex items-center gap-1 ${fbConnected ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : isOnline ? 'bg-amber-50 text-amber-600 border-amber-200' : 'bg-red-50 text-red-600 border-red-200'}`}>
+                <span className={`w-1.5 h-1.5 rounded-full inline-block ${fbConnected ? 'bg-emerald-500' : isOnline ? 'bg-amber-400' : 'bg-red-500'}`}/>
+                {fbConnected ? 'Live' : isOnline ? 'Connecting…' : 'Offline'}
+              </span>
+            )}
+            <span className="text-xs text-gray-400 hidden sm:block bg-gray-50 px-2 py-1 rounded-lg border border-gray-100">{new Date().toLocaleDateString('en-PK', { weekday:'short', year:'numeric', month:'short', day:'numeric' })}</span>
             <button onClick={logout} className="text-xs text-gray-500 hover:text-red-600 px-3 py-1.5 rounded-lg hover:bg-red-50 border border-gray-200 hover:border-red-200 transition-all hidden sm:flex items-center gap-1">⏏ <span>Logout</span></button>
           </div>
         </header>
 
         <main key={syncTick} className="flex-1 p-4 sm:p-6 overflow-y-auto">
-          {page === 'dashboard'  && <Dashboard setPage={setPage}/>}
-          {page === 'students'   && <Students/>}
-          {page === 'feecollect' && <FeeCollection/>}
-          {page === 'fees'       && <Fees/>}
-          {page === 'inventory'  && <Inventory/>}
-          {page === 'expenses'   && <Expenses/>}
-          {page === 'family'     && <FamilyLedger/>}
-          {page === 'staff'      && <Staff/>}
-          {page === 'books'      && <VendorBooks/>}
-          {page === 'exams'      && <Exams/>}
+          {page === 'dashboard'     && <Dashboard setPage={setPage}/>}
+          {page === 'students'      && <Students/>}
+          {page === 'feecollect'    && <FeeCollection/>}
+          {page === 'fees'          && <Fees/>}
+          {page === 'inventory'     && <Inventory/>}
+          {page === 'expenses'      && <Expenses/>}
+          {page === 'family'        && <FamilyLedger/>}
+          {page === 'staff'         && <Staff/>}
+          {page === 'books'         && <VendorBooks/>}
+          {page === 'exams'         && <Exams/>}
           {page === 'cashbook'      && <CashBook/>}
+          {page === 'assets'        && <Assets/>}
           {page === 'notifications' && <Notifications/>}
           {page === 'users'         && <UserAdmin/>}
           {page === 'security'      && <SecuritySettings/>}
@@ -9075,20 +9876,43 @@ function App() {
 }
 
 (function() {
-  // STEP 1: Render app immediately from localStorage — never block on Firebase
-  // Remove any old session that was saved in localStorage by the previous version
   localStorage.removeItem('sms_sess');
   window._fbSyncDone = false;
   window._fbAuthReady = false;
+  window._isOffline = !navigator.onLine;
+
+  window.addEventListener('online', function() {
+    window._isOffline = false;
+    if (!window._fbDB) return;
+    firebase.database().goOnline();
+    setTimeout(function() {
+      if (!window._fbAuthReady) return;
+      window._fbDB.ref('sms').once('value').then(function(snap) {
+        var cloudData = snap.val() || {};
+        var changed = false;
+        var ALL_KEYS = ['sms_stu','sms_inv','sms_tx','sms_cf','sms_pay','sms_exp','sms_af','sms_staff','sms_spay','sms_bl','sms_ds','sms_rs','sms_st','sms_sl','sms_vend','sms_sbook','sms_users','sms_vpay','sms_acct','sms_cbook','sms_perm','sms_audit','sms_preq','sms_notif','sms_comp','sms_asset','sms_rcpt_ctr'];
+        ALL_KEYS.forEach(function(k) {
+          var cloudVal = cloudData[k];
+          if (cloudVal !== undefined && cloudVal !== null) {
+            var cloudRaw = JSON.stringify(cloudVal);
+            if (localStorage.getItem(k) !== cloudRaw) { localStorage.setItem(k, cloudRaw); changed = true; }
+          }
+        });
+        if (changed && window._smsRefresh) window._smsRefresh();
+      }).catch(function() {});
+    }, 800);
+  });
+
+  window.addEventListener('offline', function() { window._isOffline = true; });
+
   ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
 
-  // STEP 2: Sync Firebase — wait for auth to be ready first, then pull data
   const pageLoadTime = Date.now();
   let _syncDone = false;
   firebase.auth().onAuthStateChanged(async function(user) {
     if (!user || _syncDone) return;
     _syncDone = true;
-    window._fbAuthReady = true; // auth is confirmed — S.set() can now write to Firebase
+    window._fbAuthReady = true;
 
     try {
       const fbFetch = window._fbDB.ref('sms').once('value');
@@ -9097,17 +9921,15 @@ function App() {
       const cloudData = snap.val() || {};
 
       let changed = false;
-      // All storage keys the app uses
-      const ALL_KEYS = ['sms_stu','sms_inv','sms_tx','sms_cf','sms_pay','sms_exp','sms_af','sms_staff','sms_spay','sms_bl','sms_ds','sms_rs','sms_vend','sms_sbook','sms_users','sms_vpay','sms_acct','sms_cbook','sms_perm','sms_audit','sms_preq','sms_notif','sms_comp'];
+      const ALL_KEYS = ['sms_stu','sms_inv','sms_tx','sms_cf','sms_pay','sms_exp','sms_af','sms_staff','sms_spay','sms_bl','sms_ds','sms_rs','sms_st','sms_sl','sms_vend','sms_sbook','sms_users','sms_vpay','sms_acct','sms_cbook','sms_perm','sms_audit','sms_preq','sms_notif','sms_comp','sms_asset','sms_rcpt_ctr'];
 
       ALL_KEYS.forEach(k => {
         const localRaw = localStorage.getItem(k);
-        if (cloudData[k] !== undefined && cloudData[k] !== null) {
-          // Cloud has data — cloud wins, update local
-          const cloudRaw = JSON.stringify(cloudData[k]);
+        const cloudVal = cloudData[k];
+        if (cloudVal !== undefined && cloudVal !== null) {
+          const cloudRaw = JSON.stringify(cloudVal);
           if (localRaw !== cloudRaw) { localStorage.setItem(k, cloudRaw); changed = true; }
         } else if (localRaw !== null && localRaw !== 'null') {
-          // Cloud is empty but local has data — upload local to cloud (seed Firebase)
           try { window._fbDB.ref('sms/' + k).set(JSON.parse(localRaw)).catch(() => {}); } catch(e) {}
         }
       });
@@ -9119,25 +9941,32 @@ function App() {
       console.warn('Firebase background sync failed:', e);
     }
     window._fbSyncDone = true;
-    window._hideFbLoading(); // smooth fade-out after sync
+    window._hideFbLoading();
 
-    // STEP 3: Listen for changes from other devices
+    const LIVE_KEYS = [
+      'sms_stu','sms_inv','sms_tx','sms_cf','sms_pay','sms_exp','sms_af',
+      'sms_staff','sms_spay','sms_bl','sms_ds','sms_rs','sms_st','sms_sl',
+      'sms_vend','sms_sbook','sms_users','sms_vpay','sms_acct','sms_cbook',
+      'sms_perm','sms_audit','sms_preq','sms_notif','sms_comp','sms_asset','sms_rcpt_ctr'
+    ];
+    let _refreshTimer = null;
+    const scheduleRefresh = () => {
+      if (_refreshTimer) clearTimeout(_refreshTimer);
+      _refreshTimer = setTimeout(() => { if (window._smsRefresh) window._smsRefresh(); }, 250);
+    };
     try {
-      let listenerReady = false;
-      window._fbDB.ref('sms_meta/lastUpdate').on('value', async snap => {
-        if (!listenerReady) { listenerReady = true; return; }
-        const meta = snap.val();
-        if (!meta || !meta.writer || meta.writer === window._sessionId) return;
-        if (meta.time <= pageLoadTime) return;
-        try {
-          const fresh = await window._fbDB.ref('sms').once('value');
-          const freshData = fresh.val();
-          if (freshData) {
-            const SAFE_KEYS = ['sms_stu','sms_inv','sms_tx','sms_cf','sms_pay','sms_exp','sms_af','sms_staff','sms_spay','sms_bl','sms_ds','sms_rs','sms_vend','sms_sbook','sms_users','sms_vpay','sms_acct','sms_cbook','sms_perm','sms_audit','sms_preq','sms_notif','sms_comp'];
-            SAFE_KEYS.forEach(k => { if (freshData[k] !== undefined) localStorage.setItem(k, JSON.stringify(freshData[k])); });
-            if (window._smsRefresh) window._smsRefresh();
-          }
-        } catch(e) {}
+      LIVE_KEYS.forEach(k => {
+        const ref = window._fbDB.ref('sms/' + k);
+        let firstFire = true;
+        ref.on('value', snap => {
+          if (firstFire) { firstFire = false; return; }
+          const val = snap.val();
+          if (val === null || val === undefined) return;
+          const cloudRaw = JSON.stringify(val);
+          if (localStorage.getItem(k) === cloudRaw) return;
+          localStorage.setItem(k, cloudRaw);
+          scheduleRefresh();
+        });
       });
     } catch(e) {}
   });

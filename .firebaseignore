@@ -1,0 +1,7 @@
+oep-erp/
+node_modules/
+.git/
+*.exe
+*.dll
+*.so
+*.dylib

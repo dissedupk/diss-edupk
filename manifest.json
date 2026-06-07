@@ -5,9 +5,11 @@
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
   "orientation": "any",
   "background_color": "#f1f5f9",
   "theme_color": "#c0392b",
+  "lang": "en",
   "icons": [
     {
       "src": "diss-app/logo%20diss/for%20main%20sreeen%20when%20loading.png",
@@ -26,6 +28,18 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Fee Collection",
+      "url": "/?page=feecollect",
+      "description": "Record student fee payments"
+    },
+    {
+      "name": "Dashboard",
+      "url": "/",
+      "description": "School financial overview"
     }
   ],
   "categories": ["education", "productivity"]
