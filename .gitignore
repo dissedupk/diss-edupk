@@ -1,0 +1,23 @@
+# Build artifacts / generated
+.build/node_modules/
+.build/package-lock.json
+.firebase/
+.claude/
+node_modules/
+
+# Local backups (device-specific)
+backups/
+
+# Editor / OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+
+# Unrelated / archived
+oep-erp/
+public/
+
+# Logs
+*.log
+npm-debug.log*
